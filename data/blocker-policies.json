@@ -1,0 +1,62 @@
+{
+  "activeProfile": "default",
+  "profiles": {
+    "default": {
+      "network-exposure-review": {
+        "enabled": true,
+        "minCollectorAttempts": 1,
+        "minReasoningAttempts": 0,
+        "requiresNoCriticalRisk": true,
+        "requiresNoReviewPorts": true,
+        "note": "Tekrarlı collector kanıtı var ve review port görünmüyor; network exposure blocker'ı düşürülebilir."
+      },
+      "high-risk-triage": {
+        "enabled": true,
+        "minCollectorAttempts": 1,
+        "minReasoningAttempts": 1,
+        "requiresNoCriticalRisk": true,
+        "requiresNoHighProcessRisk": true,
+        "maxRiskySignals": 3,
+        "note": "Collector ve reasoning tekrarlandı; config sinyalleri düşük yoğunlukta ve yüksek süreç riski yok."
+      }
+    },
+    "strict-soc": {
+      "network-exposure-review": {
+        "enabled": true,
+        "minCollectorAttempts": 2,
+        "minReasoningAttempts": 1,
+        "requiresNoCriticalRisk": true,
+        "requiresNoReviewPorts": true,
+        "note": "Strict SOC profilinde network blocker ancak iki collector ve bir reasoning denemesi sonrası düşer."
+      },
+      "high-risk-triage": {
+        "enabled": true,
+        "minCollectorAttempts": 2,
+        "minReasoningAttempts": 2,
+        "requiresNoCriticalRisk": true,
+        "requiresNoHighProcessRisk": true,
+        "maxRiskySignals": 2,
+        "note": "Strict SOC profilinde high-risk-triage daha geç yumuşatılır."
+      }
+    },
+    "lenient-lab": {
+      "network-exposure-review": {
+        "enabled": true,
+        "minCollectorAttempts": 1,
+        "minReasoningAttempts": 0,
+        "requiresNoCriticalRisk": true,
+        "requiresNoReviewPorts": true,
+        "note": "Lab profilinde temiz tekrar kanıtı sonrası network blocker hızlıca düşebilir."
+      },
+      "high-risk-triage": {
+        "enabled": true,
+        "minCollectorAttempts": 1,
+        "minReasoningAttempts": 1,
+        "requiresNoCriticalRisk": true,
+        "requiresNoHighProcessRisk": true,
+        "maxRiskySignals": 5,
+        "note": "Lab profilinde high-risk-triage daha esnek yorumlanır."
+      }
+    }
+  }
+}

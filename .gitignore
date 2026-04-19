@@ -1,0 +1,10 @@
+.DS_Store
+*.bak-*
+broken-scripts/
+node_modules/
+.next/
+*.tsbuildinfo
+
+# Local operational data
+data/agent-executions.json
+data/project-asylum.db
