@@ -166,6 +166,16 @@ export type PromptExecutionReport = {
   generatedAt: string;
 };
 
+export type PersistentTrustRecord = {
+  key: string;
+  scope: "environment" | "action";
+  successCount: number;
+  triageCount: number;
+  lastStatus: string | null;
+  lastConfidenceScore: number | null;
+  updatedAt: string;
+};
+
 export type PolicyDecisionDetail = {
   flag: string;
   severity: "critical" | "high" | "medium" | "low" | "info";
@@ -179,4 +189,22 @@ export type PolicyDecisionExplanation = {
   details: string[];
   structuredDetails: PolicyDecisionDetail[];
   primaryBlockerReason: PolicyDecisionDetail | null;
+};
+
+export type PlatformLogSource = {
+  id: string;
+  category: string;
+  label: string;
+  path: string;
+  exists: boolean;
+  recommended: boolean;
+};
+
+export type PlatformProfile = {
+  osFamily: "linux" | "macos" | "windows" | "unknown";
+  platform: string;
+  architecture: string;
+  hostname: string;
+  homeDir: string;
+  logSources: PlatformLogSource[];
 };

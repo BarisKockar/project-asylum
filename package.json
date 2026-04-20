@@ -7,7 +7,13 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "install:setup": "node --import tsx scripts/setup-install.ts",
+    "install:bootstrap": "node --import tsx scripts/bootstrap-install.ts",
+    "install:doctor": "node --import tsx scripts/install-doctor.ts",
+    "install:postcheck": "node --import tsx scripts/postinstall-check.ts",
+    "demo:scenarios": "node --import tsx scripts/run-demo-scenarios.ts"
   },
   "dependencies": {
     "better-sqlite3": "^11.10.0",

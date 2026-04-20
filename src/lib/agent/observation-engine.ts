@@ -2,6 +2,7 @@ import os from "node:os";
 import { execSync } from "node:child_process";
 
 import type { PromptAnalysis, PromptExecutionReport } from "../../types/agent";
+import { detectPlatformProfile } from "./platform-profile";
 
 type ExecutionObservation = PromptExecutionReport["observations"][number];
 type ListeningService = {
@@ -52,6 +53,40 @@ function safeCommand(command: string): string {
   } catch {
     return "";
   }
+}
+
+function readLogPreview(logPath: string): string[] {
+  try {
+    const output = execSync(`tail -n 5 "${logPath}"`, {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"]
+    });
+
+    return output
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .slice(-5);
+  } catch {
+    return [];
+  }
+}
+
+function detectSecurityLogSignals(lines: string[]): string[] {
+  const keywords = [
+    "failed password",
+    "authentication failure",
+    "sudo",
+    "denied",
+    "error",
+    "invalid user",
+    "security",
+    "firewall"
+  ];
+
+  return lines.filter((line) =>
+    keywords.some((keyword) => line.toLowerCase().includes(keyword))
+  );
 }
 
 function parseListeningServices(output: string): ListeningService[] {
@@ -162,6 +197,38 @@ export function collectConfigObservation(): ExecutionObservation {
   };
 }
 
+export function collectLogObservation(): ExecutionObservation {
+  const profile = detectPlatformProfile();
+  const existingSources = profile.logSources.filter((source) => source.exists);
+  const sampledSources = existingSources.slice(0, 2);
+  const previews = sampledSources.map((source) => ({
+    id: source.id,
+    path: source.path,
+    lines: readLogPreview(source.path)
+  }));
+  const previewLines = previews.flatMap((preview) => preview.lines);
+  const securitySignals = detectSecurityLogSignals(previewLines);
+
+  return {
+    kind: "telemetry",
+    detail: sampledSources.length
+      ? `Log kaynaklari tarandi: ${sampledSources.map((source) => source.label).join(", ")}.`
+      : "Uygun log kaynağı bulunamadı veya erişim sağlanamadı.",
+    confidence: sampledSources.length ? 0.69 : 0.34,
+    metadata: {
+      osFamily: profile.osFamily,
+      sampledLogSources: sampledSources.map((source) => ({
+        id: source.id,
+        label: source.label,
+        path: source.path,
+        category: source.category
+      })),
+      previewLines: previewLines.slice(0, 10),
+      securitySignals
+    }
+  };
+}
+
 export function collectExecutionObservations(
   analysis: PromptAnalysis
 ): ExecutionObservation[] {
@@ -180,6 +247,7 @@ export function collectExecutionObservations(
     collectProcessObservation(),
     collectNetworkObservation(),
     collectConfigObservation(),
+    collectLogObservation(),
     {
       kind: "host-runtime",
       detail: `Host ${hostname} uzerinde ${cpuCount} CPU cekirdegi ve ${interfaces.length} gorunen arayuz tespit edildi. Uptime ${uptimeSeconds} saniye.`,

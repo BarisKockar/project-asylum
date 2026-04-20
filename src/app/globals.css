@@ -161,6 +161,12 @@ h2 {
   gap: 16px;
 }
 
+.securityGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
 .card,
 .panel {
   border-radius: 26px;
@@ -168,6 +174,58 @@ h2 {
 
 .card {
   padding: 22px;
+}
+
+.securityPanel {
+  padding: 22px;
+  border-radius: 26px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.035);
+  box-shadow: var(--shadow);
+}
+
+.emphasisPanel {
+  background:
+    linear-gradient(180deg, rgba(100, 224, 179, 0.09), rgba(79, 128, 255, 0.05)),
+    rgba(255, 255, 255, 0.035);
+  border-color: rgba(100, 224, 179, 0.22);
+}
+
+.securityPanelHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.securityLabel {
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.securityPanelHeader strong {
+  font-size: 34px;
+  line-height: 1;
+  letter-spacing: -0.04em;
+}
+
+.securityBody {
+  margin-top: 14px;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.signalList {
+  margin: 16px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+}
+
+.signalList li + li {
+  margin-top: 10px;
 }
 
 .card h3 {
@@ -250,6 +308,12 @@ h2 {
   font-size: 13px;
 }
 
+.warningChip {
+  background: rgba(255, 178, 102, 0.12);
+  border-color: rgba(255, 178, 102, 0.28);
+  color: #ffd3a3;
+}
+
 .callout {
   margin-top: 22px;
   padding: 18px;
@@ -306,6 +370,22 @@ h2 {
   font: inherit;
   font-weight: 800;
   cursor: pointer;
+}
+
+.secondaryButton {
+  border: 1px solid rgba(109, 147, 255, 0.24);
+  border-radius: 16px;
+  padding: 12px 16px;
+  background: rgba(109, 147, 255, 0.1);
+  color: #dbe5ff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.secondaryButton:disabled {
+  opacity: 0.7;
+  cursor: wait;
 }
 
 .primaryButton:disabled {
@@ -400,6 +480,42 @@ h2 {
   gap: 16px;
 }
 
+.scenarioGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.scenarioCard {
+  padding: 22px;
+  border-radius: 24px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+  box-shadow: var(--shadow);
+}
+
+.scenarioHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.scenarioLabel {
+  margin-bottom: 8px;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.scenarioSummary {
+  margin-top: 14px;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
 .executionCard {
   padding: 18px;
   border-radius: 22px;
@@ -473,8 +589,10 @@ h2 {
   .hero,
   .layoutSplit,
   .cardGrid,
+  .securityGrid,
   .nextGrid,
   .analysisGrid,
+  .scenarioGrid,
   .executionList {
     grid-template-columns: 1fr;
   }

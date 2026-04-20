@@ -13,6 +13,7 @@ import {
   executePrompt,
   getExecutionStatusSummary,
   getPromptExecutionReport,
+  getTrustTrendSummary,
   listPromptExecutions
 } from "../../lib/agent/prompt-engine";
 
@@ -36,6 +37,24 @@ export type SystemSummary = {
     completed: number;
     needsTriage: number;
     awaitingApproval: number;
+  };
+  trustTrend: {
+    totalRecords: number;
+    topEnvironmentKey: string | null;
+    weakestActionKey: string | null;
+    topEnvironmentRatio: number;
+    weakestActionRatio: number;
+  };
+  telemetry: {
+    sampledLogSourceCount: number;
+    securitySignalCount: number;
+    topLogSourceLabel: string | null;
+  };
+  exposure: {
+    openPortCount: number;
+    highlightedPorts: number[];
+    bruteForceSignalCount: number;
+    attentionCount: number;
   };
 };
 
@@ -61,6 +80,25 @@ export type CognitiveSummary = {
     value: string;
     note: string;
   }>;
+  trustTrend: {
+    topActionKey: string | null;
+    weakestEnvironmentKey: string | null;
+    topActionRatio: number;
+    weakestEnvironmentRatio: number;
+    recentTrustSignals: string[];
+  };
+  telemetry: {
+    sampledLogSourceCount: number;
+    securitySignalCount: number;
+    sampledLogSources: string[];
+    securitySignals: string[];
+  };
+  exposure: {
+    openPorts: number[];
+    highlightedPorts: number[];
+    bruteForceSignals: string[];
+    problemSignals: string[];
+  };
 };
 
 export type { PromptAnalysis, PromptExecution, PromptExecutionReport };
@@ -69,6 +107,37 @@ export function getSystemSummary(): SystemSummary {
   const executionSummary = getExecutionStatusSummary();
   const policyInsight = latestPolicyInsight();
   const policyDecision = latestPolicyDecision();
+  const trustTrend = getTrustTrendSummary();
+  const telemetry = latestTelemetryObservation();
+  const report = latestExecutionReport();
+  const networkObservation = latestNetworkObservation();
+  const sampledLogSources = Array.isArray(telemetry?.metadata?.sampledLogSources)
+    ? telemetry.metadata.sampledLogSources
+    : [];
+  const securitySignals = Array.isArray(telemetry?.metadata?.securitySignals)
+    ? telemetry.metadata.securitySignals.filter(
+        (value): value is string => typeof value === "string"
+      )
+    : [];
+  const ports = Array.isArray(networkObservation?.metadata?.ports)
+    ? networkObservation.metadata.ports.filter(
+        (value): value is number => typeof value === "number"
+      )
+    : [];
+  const reviewPorts = Array.isArray(networkObservation?.metadata?.reviewPorts)
+    ? networkObservation.metadata.reviewPorts.filter(
+        (value): value is number => typeof value === "number"
+      )
+    : [];
+  const bruteForceSignals = securitySignals.filter((signal) =>
+    /failed password|authentication failure|invalid user/i.test(signal)
+  );
+  const attentionCount =
+    reviewPorts.length +
+    bruteForceSignals.length +
+    (report?.decision.blockers.length ?? 0) +
+    (report?.risks.filter((risk) => ["critical", "high"].includes(risk.severity))
+      .length ?? 0);
 
   return {
     status: executionSummary.needsTriage > 0 ? "attention-needed" : "healthy",
@@ -94,6 +163,27 @@ export function getSystemSummary(): SystemSummary {
       completed: executionSummary.completed,
       needsTriage: executionSummary.needsTriage,
       awaitingApproval: executionSummary.awaitingApproval
+    },
+    trustTrend: {
+      totalRecords: trustTrend.totalRecords,
+      topEnvironmentKey: trustTrend.topEnvironment?.key ?? null,
+      weakestActionKey: trustTrend.weakestAction?.key ?? null,
+      topEnvironmentRatio: trustTrend.topEnvironment?.trustRatio ?? 0,
+      weakestActionRatio: trustTrend.weakestAction?.trustRatio ?? 0
+    },
+    telemetry: {
+      sampledLogSourceCount: sampledLogSources.length,
+      securitySignalCount: securitySignals.length,
+      topLogSourceLabel:
+        typeof sampledLogSources[0]?.label === "string"
+          ? sampledLogSources[0].label
+          : null
+    },
+    exposure: {
+      openPortCount: ports.length,
+      highlightedPorts: reviewPorts,
+      bruteForceSignalCount: bruteForceSignals.length,
+      attentionCount
     }
   };
 }
@@ -119,6 +209,18 @@ function latestExecutionReport() {
     : null;
 }
 
+function latestTelemetryObservation() {
+  const report = latestExecutionReport();
+  return report?.observations.find((observation) => observation.kind === "telemetry") ?? null;
+}
+
+function latestNetworkObservation() {
+  const report = latestExecutionReport();
+  return report?.observations.find(
+    (observation) => observation.kind === "network-surface"
+  ) ?? null;
+}
+
 function latestPolicyDecision(): PolicyDecisionExplanation {
   return buildPolicyDecisionExplanation(latestPolicyInsight());
 }
@@ -132,6 +234,41 @@ export function getCognitiveSummary(): CognitiveSummary {
   const policyDecision = buildPolicyDecisionExplanation(
     latestReport?.policyInsight
   );
+  const trustTrend = getTrustTrendSummary();
+  const telemetry = latestTelemetryObservation();
+  const networkObservation = latestNetworkObservation();
+  const sampledLogSources = Array.isArray(telemetry?.metadata?.sampledLogSources)
+    ? telemetry.metadata.sampledLogSources
+        .map((value) =>
+          typeof value?.label === "string" ? value.label : null
+        )
+        .filter((value): value is string => typeof value === "string")
+    : [];
+  const securitySignals = Array.isArray(telemetry?.metadata?.securitySignals)
+    ? telemetry.metadata.securitySignals.filter(
+        (value): value is string => typeof value === "string"
+      )
+    : [];
+  const openPorts = Array.isArray(networkObservation?.metadata?.ports)
+    ? networkObservation.metadata.ports.filter(
+        (value): value is number => typeof value === "number"
+      )
+    : [];
+  const highlightedPorts = Array.isArray(networkObservation?.metadata?.reviewPorts)
+    ? networkObservation.metadata.reviewPorts.filter(
+        (value): value is number => typeof value === "number"
+      )
+    : [];
+  const bruteForceSignals = securitySignals.filter((signal) =>
+    /failed password|authentication failure|invalid user/i.test(signal)
+  );
+  const problemSignals = [
+    ...new Set([
+      ...(latestReport?.decision.blockers ?? []),
+      ...highlightedPorts.map((port) => `review-port:${port}`),
+      ...securitySignals.slice(0, 3)
+    ])
+  ];
 
   return {
     critique: latestReport?.critic.verdict ?? "unknown",
@@ -188,7 +325,30 @@ export function getCognitiveSummary(): CognitiveSummary {
         note:
           latestReport?.decision.nextStep ?? "Sonraki adım henüz hesaplanmadı."
       }
-    ]
+    ],
+    trustTrend: {
+      topActionKey: trustTrend.topAction?.key ?? null,
+      weakestEnvironmentKey: trustTrend.weakestEnvironment?.key ?? null,
+      topActionRatio: trustTrend.topAction?.trustRatio ?? 0,
+      weakestEnvironmentRatio: trustTrend.weakestEnvironment?.trustRatio ?? 0,
+      recentTrustSignals:
+        trustTrend.recentRecords.map(
+          (record) =>
+            `${record.scope}:${record.key} success=${record.successCount} triage=${record.triageCount}`
+        ) ?? []
+    },
+    telemetry: {
+      sampledLogSourceCount: sampledLogSources.length,
+      securitySignalCount: securitySignals.length,
+      sampledLogSources,
+      securitySignals
+    },
+    exposure: {
+      openPorts,
+      highlightedPorts,
+      bruteForceSignals,
+      problemSignals
+    }
   };
 }
 

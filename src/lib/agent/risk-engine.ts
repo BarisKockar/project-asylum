@@ -119,6 +119,24 @@ export function scoreExecutionRisks(
     });
   }
 
+  const telemetryObservation = observations.find(
+    (observation) => observation.kind === "telemetry"
+  );
+  const telemetryMetadata = getMetadata(telemetryObservation);
+  const securitySignals = getStringArray(telemetryMetadata, "securitySignals");
+  if (telemetryObservation && securitySignals.length > 0) {
+    const severity = securitySignals.length > 2 ? "high" : "medium";
+    risks.push({
+      id: "risk-log-anomaly",
+      severity,
+      title: "Log tabanlı güvenlik sinyali",
+      rationale: `Log örneklerinde dikkat gerektiren sinyaller bulundu: ${securitySignals.slice(0, 3).join(" | ")}.`,
+      sourceKinds: ["telemetry", "policy"],
+      score: severityWeight(severity),
+      evidence: securitySignals.slice(0, 5)
+    });
+  }
+
   if (analysis.detectedTargets.includes("admin-panel")) {
     const severity = reviewPorts.some((port) => [8000, 8080, 8443, 9000].includes(port))
       ? "critical"

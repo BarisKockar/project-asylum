@@ -1,0 +1,20 @@
+{
+  "package": "project-asylum",
+  "installMode": "observe-only",
+  "safeByDefault": true,
+  "remediationEnabled": false,
+  "createdAt": "2026-04-20T10:53:44.625Z",
+  "root": "/Users/bariskockar/Desktop/bilet-app/project asylum",
+  "dataDir": "/Users/bariskockar/Desktop/bilet-app/project asylum/data",
+  "envExamplePath": "/Users/bariskockar/Desktop/bilet-app/project asylum/.env.example",
+  "envPath": "/Users/bariskockar/Desktop/bilet-app/project asylum/.env",
+  "envCreated": false,
+  "nextCommands": [
+    "npm install",
+    "npm run install:bootstrap",
+    "npm run install:doctor",
+    "npm run install:postcheck",
+    "npm test",
+    "npm run dev"
+  ]
+}

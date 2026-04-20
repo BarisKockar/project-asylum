@@ -1,11 +1,16 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import type { PromptExecution, PromptExecutionReport } from "../../types/agent";
+import type {
+  PersistentTrustRecord,
+  PromptExecution,
+  PromptExecutionReport
+} from "../../types/agent";
 
 type PersistentExecutionStore = {
   executions: PromptExecution[];
   reports: Record<string, PromptExecutionReport>;
+  trustRecords: Record<string, PersistentTrustRecord>;
 };
 
 const STORE_DIR = path.join(process.cwd(), "data");
@@ -14,7 +19,8 @@ const STORE_PATH = path.join(STORE_DIR, "agent-executions.json");
 function emptyStore(): PersistentExecutionStore {
   return {
     executions: [],
-    reports: {}
+    reports: {},
+    trustRecords: {}
   };
 }
 
@@ -58,6 +64,34 @@ function normalizeExecution(execution: PromptExecution): PromptExecution {
   };
 }
 
+function normalizeTrustRecord(
+  record: PersistentTrustRecord
+): PersistentTrustRecord {
+  return {
+    key: record.key,
+    scope: record.scope === "action" ? "action" : "environment",
+    successCount:
+      typeof record.successCount === "number" && Number.isFinite(record.successCount)
+        ? record.successCount
+        : 0,
+    triageCount:
+      typeof record.triageCount === "number" && Number.isFinite(record.triageCount)
+        ? record.triageCount
+        : 0,
+    lastStatus:
+      typeof record.lastStatus === "string" ? record.lastStatus : null,
+    lastConfidenceScore:
+      typeof record.lastConfidenceScore === "number" &&
+      Number.isFinite(record.lastConfidenceScore)
+        ? record.lastConfidenceScore
+        : null,
+    updatedAt:
+      typeof record.updatedAt === "string" && record.updatedAt.length > 0
+        ? record.updatedAt
+        : new Date(0).toISOString()
+  };
+}
+
 function ensureStoreDir(): void {
   fs.mkdirSync(STORE_DIR, { recursive: true });
 }
@@ -78,6 +112,10 @@ export function loadPersistentExecutionStore(): PersistentExecutionStore {
     const parsed = JSON.parse(raw) as Partial<PersistentExecutionStore>;
     const reports =
       parsed.reports && typeof parsed.reports === "object" ? parsed.reports : {};
+    const trustRecords =
+      parsed.trustRecords && typeof parsed.trustRecords === "object"
+        ? parsed.trustRecords
+        : {};
 
     return {
       executions: Array.isArray(parsed.executions)
@@ -89,6 +127,12 @@ export function loadPersistentExecutionStore(): PersistentExecutionStore {
         Object.entries(reports).map(([key, value]) => [
           key,
           normalizeReport(value as PromptExecutionReport)
+        ])
+      ),
+      trustRecords: Object.fromEntries(
+        Object.entries(trustRecords).map(([key, value]) => [
+          key,
+          normalizeTrustRecord(value as PersistentTrustRecord)
         ])
       )
     };

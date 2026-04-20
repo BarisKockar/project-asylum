@@ -1,4 +1,8 @@
-import type { PromptExecution, PromptExecutionReport } from "../../types/agent";
+import type {
+  PersistentTrustRecord,
+  PromptExecution,
+  PromptExecutionReport
+} from "../../types/agent";
 import {
   loadPersistentExecutionStore,
   savePersistentExecutionStore
@@ -7,6 +11,7 @@ import {
 type ExecutionStore = {
   executions: PromptExecution[];
   reports: Record<string, PromptExecutionReport>;
+  trustRecords: Record<string, PersistentTrustRecord>;
 };
 
 declare global {
@@ -224,7 +229,8 @@ function createBootstrapStore(): ExecutionStore {
         },
         generatedAt: bootstrapExecution.createdAt
       }
-    }
+    },
+    trustRecords: {}
   };
 }
 
@@ -242,8 +248,13 @@ export function persistExecutionStore(): void {
   const store = getExecutionStore();
   savePersistentExecutionStore({
     executions: store.executions,
-    reports: store.reports
+    reports: store.reports,
+    trustRecords: store.trustRecords
   });
+}
+
+export function resetExecutionStoreForTests(): void {
+  globalThis.__projectAsylumExecutionStore__ = createBootstrapStore();
 }
 
 export function filterExecutionsByStatus(status?: string): PromptExecution[] {
@@ -288,4 +299,10 @@ export function filterExecutions(
 
     return statusMatches && policyMatches;
   });
+}
+
+export function listTrustRecords() {
+  return Object.values(getExecutionStore().trustRecords).sort((left, right) =>
+    right.updatedAt.localeCompare(left.updatedAt)
+  );
 }

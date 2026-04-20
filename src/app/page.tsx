@@ -1,4 +1,5 @@
 import { DashboardClient } from "./components/dashboard-client";
+import { listDemoScenarios } from "../lib/agent/runtime";
 import {
   getCognitiveSummary,
   getSystemSummary,
@@ -9,6 +10,7 @@ export default function HomePage() {
   const system = getSystemSummary();
   const cognitive = getCognitiveSummary();
   const executions = listPromptExecutions();
+  const demoScenarios = listDemoScenarios();
 
   return (
     <main className="shell">
@@ -16,6 +18,7 @@ export default function HomePage() {
         initialSystem={system}
         initialCognitive={cognitive}
         initialExecutions={executions}
+        initialDemoScenarios={demoScenarios}
       />
     </main>
   );

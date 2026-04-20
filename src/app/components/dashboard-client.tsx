@@ -7,17 +7,20 @@ import type {
   PromptExecution,
   SystemSummary
 } from "../lib/platform-data";
+import type { DemoScenario } from "../../lib/agent/demo-scenarios";
 
 type DashboardClientProps = {
   initialSystem: SystemSummary;
   initialCognitive: CognitiveSummary;
   initialExecutions: PromptExecution[];
+  initialDemoScenarios: DemoScenario[];
 };
 
 export function DashboardClient({
   initialSystem,
   initialCognitive,
-  initialExecutions
+  initialExecutions,
+  initialDemoScenarios
 }: DashboardClientProps) {
   const [system] = useState(initialSystem);
   const [cognitive] = useState(initialCognitive);
@@ -26,16 +29,23 @@ export function DashboardClient({
   );
   const [result, setResult] = useState<PromptAnalysis | null>(null);
   const [executions, setExecutions] = useState(initialExecutions);
+  const [demoScenarios] = useState(initialDemoScenarios);
+  const [activeScenarioId, setActiveScenarioId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const assistantMessage = result
     ? result.assistantResponse
     : "Buraya bir analiz isteği yazdığında sistem onu yorumlayıp sana ne yapacağını, hangi hedefleri gördüğünü ve neden o yoldan gideceğini açıklayacak.";
+  const priorityIssues = cognitive.exposure.problemSignals.slice(0, 4);
+  const exposedPorts = cognitive.exposure.openPorts.slice(0, 6);
+  const highlightedPorts = cognitive.exposure.highlightedPorts.slice(0, 6);
+  const bruteForceSignals = cognitive.exposure.bruteForceSignals.slice(0, 3);
 
   const handleAnalyze = () => {
     startTransition(async () => {
       setError(null);
+      setActiveScenarioId(null);
 
       const response = await fetch("/api/execute", {
         method: "POST",
@@ -58,6 +68,46 @@ export function DashboardClient({
       };
       setResult(payload.analysis);
       setExecutions((current) => [payload.execution, ...current].slice(0, 12));
+    });
+  };
+
+  const handleRunScenario = (scenarioId: string) => {
+    startTransition(async () => {
+      setError(null);
+      setActiveScenarioId(scenarioId);
+
+      const response = await fetch("/api/demo-scenarios", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ scenarioId })
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json()) as { error?: string };
+        setError(payload.error ?? "Demo senaryosu calistirilamadi.");
+        setActiveScenarioId(null);
+        return;
+      }
+
+      const payload = (await response.json()) as {
+        scenario: DemoScenario;
+        execution: PromptExecution;
+        report: { execution: PromptExecution };
+      };
+
+      setPrompt(payload.scenario.prompt);
+      setExecutions((current) => [payload.execution, ...current].slice(0, 12));
+      setResult((current) =>
+        current
+          ? {
+              ...current,
+              assistantResponse: `${payload.scenario.title} senaryosu calistirildi. Sistem bu senaryo icin ${payload.execution.status} durumunda bir execution olusturdu.`
+            }
+          : null
+      );
+      setActiveScenarioId(null);
     });
   };
 
@@ -224,6 +274,113 @@ export function DashboardClient({
 
       <section className="section">
         <div className="sectionHeading">
+          <p className="sectionEyebrow">Demo Senaryolari</p>
+          <h2>Kritik anlari tek tikla goster</h2>
+        </div>
+        <div className="scenarioGrid">
+          {demoScenarios.map((scenario) => (
+            <article key={scenario.id} className="scenarioCard">
+              <div className="scenarioHeader">
+                <div>
+                  <p className="scenarioLabel">{scenario.customerLabel}</p>
+                  <h3>{scenario.title}</h3>
+                </div>
+                <button
+                  type="button"
+                  className="secondaryButton"
+                  onClick={() => handleRunScenario(scenario.id)}
+                  disabled={isPending}
+                >
+                  {activeScenarioId === scenario.id ? "Calisiyor..." : "Senaryoyu calistir"}
+                </button>
+              </div>
+              <p className="scenarioSummary">{scenario.summary}</p>
+              <div className="chipRow compactRow">
+                {scenario.expectedSignals.map((signal) => (
+                  <span key={signal} className="chip">
+                    {signal}
+                  </span>
+                ))}
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="section">
+        <div className="sectionHeading">
+          <p className="sectionEyebrow">İlk Bakış</p>
+          <h2>Müşteriye gösterilecek güvenlik panelleri</h2>
+        </div>
+        <div className="securityGrid">
+          <article className="securityPanel emphasisPanel">
+            <div className="securityPanelHeader">
+              <p className="securityLabel">Açık Portlar</p>
+              <strong>{system.exposure.openPortCount}</strong>
+            </div>
+            <p className="securityBody">
+              Sistem şu an dinleyen servisleri görüyor. Özellikle inceleme isteyen
+              portlar müşteriye net biçimde ayrılıyor.
+            </p>
+            <div className="chipRow compactRow">
+              {highlightedPorts.length ? (
+                highlightedPorts.map((port) => (
+                  <span key={port} className="chip warningChip">
+                    port {port}
+                  </span>
+                ))
+              ) : exposedPorts.length ? (
+                exposedPorts.map((port) => (
+                  <span key={port} className="chip">
+                    port {port}
+                  </span>
+                ))
+              ) : (
+                <span className="chip">port sinyali yok</span>
+              )}
+            </div>
+          </article>
+
+          <article className="securityPanel">
+            <div className="securityPanelHeader">
+              <p className="securityLabel">Brute Force / Giriş Denemeleri</p>
+              <strong>{system.exposure.bruteForceSignalCount}</strong>
+            </div>
+            <p className="securityBody">
+              Log preview katmanı başarısız giriş, invalid user ve authentication
+              failure benzeri sinyalleri sayıyor.
+            </p>
+            <ul className="signalList">
+              {bruteForceSignals.length ? (
+                bruteForceSignals.map((signal) => <li key={signal}>{signal}</li>)
+              ) : (
+                <li>Şu an belirgin brute force sinyali görünmüyor.</li>
+              )}
+            </ul>
+          </article>
+
+          <article className="securityPanel">
+            <div className="securityPanelHeader">
+              <p className="securityLabel">Dikkat Gerektiren Durumlar</p>
+              <strong>{system.exposure.attentionCount}</strong>
+            </div>
+            <p className="securityBody">
+              Policy blocker, yüksek risk ve dikkat isteyen log/port sinyalleri tek
+              yerde toplanıyor.
+            </p>
+            <ul className="signalList">
+              {priorityIssues.length ? (
+                priorityIssues.map((signal) => <li key={signal}>{signal}</li>)
+              ) : (
+                <li>Şu an kritik dikkat sinyali görünmüyor.</li>
+              )}
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section className="section">
+        <div className="sectionHeading">
           <p className="sectionEyebrow">Execution</p>
           <h2>Çalıştırılan prompt geçmişi</h2>
         </div>
@@ -276,6 +433,22 @@ export function DashboardClient({
           <article className="card">
             <h3>Confidence</h3>
             <p>%{Math.round(cognitive.confidence * 100)}</p>
+          </article>
+          <article className="card">
+            <h3>Log kaynakları</h3>
+            <p>{system.telemetry.sampledLogSourceCount} kaynak örneklendi</p>
+          </article>
+          <article className="card">
+            <h3>Log sinyalleri</h3>
+            <p>{system.telemetry.securitySignalCount} güvenlik sinyali görüldü</p>
+          </article>
+          <article className="card">
+            <h3>Öne çıkan kaynak</h3>
+            <p>{system.telemetry.topLogSourceLabel ?? "Henüz etiketli log kaynağı yok"}</p>
+          </article>
+          <article className="card">
+            <h3>Otomasyon seviyesi</h3>
+            <p>{cognitive.automationEligibility}</p>
           </article>
         </div>
       </section>

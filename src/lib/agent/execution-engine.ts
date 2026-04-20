@@ -17,7 +17,7 @@ import {
 import { buildReasoningTrace } from "./reasoning-engine";
 import { scoreExecutionRisks } from "./risk-engine";
 import { runExecutionTasks } from "./task-runner";
-import { buildTrustAssessment } from "./trust-engine";
+import { buildTrustAssessment, updateTrustTrendRecords } from "./trust-engine";
 
 function createExecution(analysis: PromptAnalysis): PromptExecution {
   const createdAt = new Date().toISOString();
@@ -57,6 +57,11 @@ function findPreviousReportForPrompt(
   }
 
   return store.reports[previousExecution.id] ?? null;
+}
+
+function listHistoricalReports(): PromptExecutionReport[] {
+  const store = getExecutionStore();
+  return Object.values(store.reports);
 }
 
 export function runPromptExecution(
@@ -103,9 +108,17 @@ export function runPromptExecution(
     critic,
     policyInsight
   );
-  const historicalReports = existingReport ? [existingReport] : [];
+  const historicalReports = existingReport
+    ? [
+        ...listHistoricalReports().filter(
+          (report) => report.execution.id !== existingReport.execution.id
+        ),
+        existingReport
+      ]
+    : listHistoricalReports();
   const trust = buildTrustAssessment({
     execution,
+    observations,
     reasoning,
     risks,
     decision,
@@ -138,6 +151,14 @@ export function runPromptExecution(
   const store = getExecutionStore();
   store.executions = [report.execution, ...store.executions].slice(0, 12);
   store.reports[report.execution.id] = report;
+  store.trustRecords = updateTrustTrendRecords({
+    execution: report.execution,
+    observations,
+    risks,
+    decision,
+    confidenceScore: trust.confidenceScore,
+    existingRecords: store.trustRecords
+  });
   persistExecutionStore();
 
   return {

@@ -4,6 +4,7 @@ broken-scripts/
 node_modules/
 .next/
 *.tsbuildinfo
+.env
 
 # Local operational data
 data/agent-executions.json

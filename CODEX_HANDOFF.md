@@ -19,6 +19,7 @@ Project Asylum:
 - earned autonomy modeliyle güven kazandıkça yetki artışı hedefleyen bir ürün
 
 Şu an odak UI değil, backend bilişsel omurgadır.
+Ancak ilk müşteri kurulumu için anlaşılır demo/dashboard yüzeyi de artık aktif olarak şekillendirilmektedir.
 
 ## Current State
 
@@ -55,6 +56,7 @@ Project Asylum:
 ### API surface
 
 - `/Users/bariskockar/Desktop/bilet-app/project asylum/src/app/api/analyze/route.ts`
+- `/Users/bariskockar/Desktop/bilet-app/project asylum/src/app/api/demo-scenarios/route.ts`
 - `/Users/bariskockar/Desktop/bilet-app/project asylum/src/app/api/execute/route.ts`
 - `/Users/bariskockar/Desktop/bilet-app/project asylum/src/app/api/executions/route.ts`
 - `/Users/bariskockar/Desktop/bilet-app/project asylum/src/app/api/executions/[id]/route.ts`
@@ -81,6 +83,7 @@ Project Asylum:
 - listening TCP services
 - config/env signals
 - host runtime
+- log/telemetry preview
 - policy context
 - plan context
 
@@ -93,6 +96,8 @@ Observation kayıtları artık `metadata` taşıyor.
 - `ports`
 - `reviewPorts`
 - `riskySignals`
+- `sampledLogSources`
+- `securitySignals`
 
 ### 3. Risk engine
 
@@ -101,6 +106,7 @@ Observation kayıtları artık `metadata` taşıyor.
 - `risk-process-review`
 - `risk-config-hardening`
 - `risk-admin-surface`
+- `risk-log-anomaly`
 - `risk-safe-first-gate`
 
 Her risk için artık:
@@ -226,6 +232,7 @@ Yani sistem şu an otomatik düzeltme yapmıyor, ama karar ve blokaj modelini ta
 ## Verified Behavior
 
 Bu workspace’te doğrulanan son backend davranışları:
+- `npm test` şu an `14/14` geçiyor.
 - `npx tsc --noEmit --incremental false` geçti.
 - `node --import tsx --eval ... executePrompt(...)` ile policy modülü ayrıldıktan sonra smoke test tekrar geçti.
 - `data/blocker-policies.json` okuyan policy-engine ile smoke test tekrar geçti.
@@ -238,6 +245,65 @@ Bu workspace’te doğrulanan son backend davranışları:
 - `policyInsight.context` ve `policyInsight.evaluations` smoke testinde aynı execution context’in strict profilde neden takıldığını gösterdi; örneğin `high-risk-triage` için `riskySignalsSatisfied=false` açıkça görüldü.
 - `policyDecisionLines` strict profil smoke testinde şu açıklamayı üretti: `high-risk-triage kuralı beklemede; riskli sinyal yoğunluğu yüksek (3/2).`
 - `policyDecisionSummary` strict profil smoke testinde şu kısa özeti üretti: `strict-soc profili altında high-risk-triage kuralı hâlâ beklemede.`
+- execution observations artık platforma göre log kaynaklarını keşfediyor ve salt-okunur preview ile telemetry observation üretiyor.
+- telemetry observation içindeki güvenlik sinyallerinden `risk-log-anomaly` türetilmesi testle doğrulandı.
+- `SystemSummary` ve `CognitiveSummary` artık telemetry ve exposure alanları taşıyor:
+  - açık port sayısı
+  - review port listesi
+  - brute-force benzeri log sinyalleri
+  - dikkat gerektiren durum sayısı
+- dashboard artık müşteriye ilk kurulum sırasında gösterilebilecek üç net panel içeriyor:
+  - Açık Portlar
+  - Brute Force / Giriş Denemeleri
+  - Dikkat Gerektiren Durumlar
+- dashboard artık ayrıca tek tıkla çalıştırılabilen müşteri demo senaryoları içeriyor:
+  - `brute-force-watch`
+  - `open-port-exposure`
+  - `critical-posture-review`
+- demo senaryoları observe-only overlay uygular; gerçek remediation yapmaz, ama müşteriye kritik anlarda sistemin nasıl sinyal verdiğini görünür kılar.
+- terminalden tek komutlu demo doğrulaması hazır:
+  - `npm run demo:scenarios`
+  - çıktı içinde senaryo bazında `status`, `riskCount`, `blockerCount`, `openPortCount`, `securitySignalCount` görülür.
+
+## Demo Surface
+
+Demo senaryoları için ana dosyalar:
+- `/Users/bariskockar/Desktop/bilet-app/project asylum/src/lib/agent/demo-scenarios.ts`
+- `/Users/bariskockar/Desktop/bilet-app/project asylum/src/app/api/demo-scenarios/route.ts`
+- `/Users/bariskockar/Desktop/bilet-app/project asylum/scripts/run-demo-scenarios.ts`
+
+Amaç:
+- müşteriye prompt yazdırmadan sistemi göstermek
+- kritik an simülasyonlarını güvenli biçimde yüzeye çıkarmak
+- observe-only mod bozulmadan brute-force, açık port ve kritik posture örnekleri üretmek
+
+## Installation Surface
+
+Kurulum yüzeyi hazır ve güvenli varsayılanlarla çalışıyor:
+- `scripts/setup-install.ts`
+- `scripts/bootstrap-install.ts`
+- `scripts/install-doctor.ts`
+- `scripts/postinstall-check.ts`
+- `scripts/install.sh`
+- `scripts/install.ps1`
+- `INSTALLATION.md`
+
+Kurulum garantileri:
+- `observe-only`
+- `safe-by-default`
+- `remediation disabled`
+- platform ayrımı: `linux | macos | windows`
+- log kaynakları otomatik keşfedilir, ama sadece okunur preview alınır
+
+## Current UI Demo Surface
+
+Mevcut dashboard müşteriye ilk kurulumda sistemin çalıştığını göstermek için artık şu özetleri verir:
+- dinleyen açık port sayısı ve öne çıkan review portlar
+- brute-force / authentication failure benzeri log sinyali sayısı
+- policy blocker + yüksek risk + log/port sinyalinden türetilmiş dikkat göstergeleri
+- örneklenen log kaynağı sayısı ve öne çıkan log kaynağı
+
+Bu yüzey henüz tam ürün UI’ı değil; amaç ilk kurulum ve ilk demo anında teknik boğuculuk olmadan “sistem gerçekten veri görüyor” hissini vermektir.
 - `policyDecisionDetails` structured çıktı olarak priority ve severity taşıyor; örneğin `high-risk-triage` artık `severity=high`, `priority=1` ile en üstte geliyor.
 - `primaryBlockerReason` strict profil smoke testinde `high-risk-triage` olarak doğrulandı; yani backend artık tek alanla en kritik bekleyen policy sebebini expose ediyor.
 - decision modeli artık `policyInsight.pendingRules` ile hizalı; strict smoke testte `decision.status=needs-triage`, `decision.blockers=[high-risk-triage]` ve `primaryBlockerReason=high-risk-triage` aynı anda doğrulandı.
@@ -246,6 +312,23 @@ Bu workspace’te doğrulanan son backend davranışları:
 - blocker `priority` değeri artık yalnızca sabit map değil; risk severity ve score etkisi de priority hesabına katılıyor.
 - ilk trust/confidence iskeleti eklendi; execution report artık `trust` alanı içinde confidence ve automation eligibility taşıyor.
 - trust engine artık sınırlı historical feedback kullanıyor; aynı prompt/ortam tekrarlandıkça geçmiş `completed` ve `needs-triage` sonuçları confidence hesabını etkiliyor.
+- trust engine artık yalnızca aynı prompt’a bakmıyor; host/runtime observation metadata’sından türetilen environment fingerprint ile aynı environment + action-type sınıfındaki geçmiş başarı/triage kayıtlarını ayrı ağırlıklarla confidence hesabına katıyor.
+- trust trend artık yalnızca hesaplanan anlık değer değil; execution store ve kalıcı JSON persistence içine `trustRecords` olarak yazılıyor.
+- trust trend summary katmanı eklendi; backend artık en güçlü environment/action kayıtlarını ve en zayıf alanları tek özetten çıkarabiliyor.
+- trust trend summary artık `trustRatio` da taşıyor; güçlü/zayıf environment ve action alanları oran bazlı karşılaştırılabiliyor.
+- ilk formal test katmanı eklendi; `npm test` artık `tests/agent-backend.test.ts` üzerinden geçiyor.
+- test kapsamı şu an üç kritik alanı kilitliyor:
+  - strict profile altında primary blocker sıralaması
+  - trust score'un history success / triage etkisi
+  - policy insight içinde matched / pending rule ayrımı
+- test kapsamı aynı gün iki uçtan uca davranışla genişletildi:
+  - `executePrompt()` çağrısının persisted report + trust + policy insight üretmesi
+  - execution filtrelerinin `status + policyProfile` birlikte doğru çalışması
+- test kapsamı ayrıca aynı environment/action-type içindeki farklı promptların trust history’den faydalanmasını da doğruluyor.
+- bu doğrulama artık kaba `localhost` etiketi yerine gerçek host/runtime fingerprint mantığıyla yapılıyor.
+- ek olarak `executePrompt()` sonrası environment ve action scope’lu trust trend kayıtlarının hem memory store’da hem disk üstündeki JSON dosyasında oluştuğu da testle doğrulanıyor.
+- ayrıca `getTrustTrendSummary()` üzerinden top/weak trust alanlarının sıralandığı da testle doğrulanıyor.
+- `SystemSummary` ve `CognitiveSummary` artık trust trend anahtarları ve ratio alanlarını da dışa açıyor.
 - `npx tsx --eval ... executePrompt(...)` çağrısı çalıştı.
 - Execution summary örneği:
   - `7 observation, 4 risk, 4 hipotez ve 3 plan adımı üretildi`
@@ -290,6 +373,30 @@ Bu workspace’te doğrulanan son backend davranışları:
 - Bazı eski dosyalar geçmişte `Operation timed out` verdi; bu dosya temiz kopya olarak yeniden oluşturuldu.
 - 2026-04-19 tarihinde proje GitHub'a güvenli yayın için kullanıcı home dizinini kapsayan eski üst repo yerine bu klasörde bağımsız git deposu olarak yeniden başlatıldı.
 - Aynı gün `scripts/init-storage.ts`, `scripts/run-local-collector.ts`, `scripts/run-local-cycle.ts`, `scripts/run-reasoning.ts` dosyaları okunamayan bozuk kopyalardan ayrılıp temiz wrapper sürümleriyle yeniden oluşturuldu.
+- `package.json` içine `npm test` scripti eklendi ve Node test runner + `tsx` üzerinden TypeScript testleri koşuluyor.
+- `src/lib/agent/execution-store.ts` içine testler için `resetExecutionStoreForTests()` yardımcısı eklendi.
+- `src/lib/agent/persistent-store.ts` ve `src/lib/agent/execution-store.ts` artık `trustRecords` alanı taşıyor.
+- `src/app/api/trust-summary/route.ts` eklendi; trust trend summary artık API yüzeyinden de alınabiliyor.
+- `src/app/lib/platform-data.ts` trust trend özetini system/cognitive summary katmanına bağlıyor.
+- `src/lib/agent/platform-profile.ts` eklendi; sistem artık `linux/macos/windows` ayrımı yapıp önerilen log kaynaklarını structured olarak tespit ediyor.
+- `src/lib/agent/observation-engine.ts` artık keşfedilen log kaynaklarından salt-okunur preview alıp `telemetry` observation üretiyor.
+- `src/lib/agent/risk-engine.ts` artık log preview içindeki temel güvenlik sinyallerinden `risk-log-anomaly` türetebiliyor.
+- `src/app/lib/platform-data.ts` artık telemetry özetini de `SystemSummary` ve `CognitiveSummary` içine bağlıyor.
+- `src/app/api/platform-profile/route.ts` eklendi; platform profili ve log source listesi artık API yüzeyinden alınabiliyor.
+- `scripts/bootstrap-install.ts` ve `scripts/install-doctor.ts` eklendi; kurulum bootstrap ve doctor akışı JSON çıktısı veriyor.
+- `scripts/setup-install.ts` ve `scripts/postinstall-check.ts` eklendi; setup `.env` ve release manifest üretip post-install doğrulaması yapıyor.
+- `README.md`, `release/README.md`, `release/VERSION.json`, `scripts/install.sh` ve `scripts/install.ps1` eklendi; proje artık daha profesyonel bir release ve onboarding yüzeyi sunuyor.
+- `INSTALLATION.md` eklendi; kurulum komutları ve platform bazlı log kaynakları dokümante edildi.
+- `package.json` içine `install:bootstrap` ve `install:doctor` scriptleri eklendi.
+- `package.json` içine `install:setup` ve `install:postcheck` scriptleri de eklendi.
+- `.env.example` eklendi; observe-only güvenlik varsayımları ve temel runtime değişkenleri dokümante edildi.
+- test kapsamı platform profile tespiti ve install script JSON çıktısını da kapsıyor.
+- test kapsamı telemetry/log discovery observation ve log anomaly risk türetimini de kapsıyor.
+- test kapsamı summary katmanındaki telemetry alanlarını da doğruluyor.
+- test kapsamı release surface ve profesyonel proje dokümantasyon dosyalarının varlığını da kapsıyor.
+- kurulum güvenlik ilkesi netleştirildi: installer/doctor varsayılan olarak `installationMode=observe-only`, `safeByDefault=true`, `remediationEnabled=false` döndürüyor.
+- bu alanlar testle sabitlendi; kurulum sırasında sistem yalnızca keşif/gözlem yapmalı, aktif düzeltme ya da riskli değişiklik yapmamalı.
+- `TUBITAK_1812_BIGG_BASVURU_TASLAGI.md` eklendi; 1812 BiGG için resmî çağrı ve PRODİS mantığına yakın doldurulmuş başvuru metni taslağı hazırlandı.
 - Execution store `globalThis` üstünde cache’leniyor ama `/Users/bariskockar/Desktop/bilet-app/project asylum/data/agent-executions.json` dosyasına kalıcı yazılıyor.
 - Execution listesi artık status bazlı filtrelenebiliyor; örneğin `needs-triage`, `awaiting-approval`, `completed`.
 - System ve cognitive summary katmanı artık bu status geçmişinden besleniyor; bekleyen işler summary tarafında görünür.

@@ -1,9 +1,15 @@
 import type {
+  PersistentTrustRecord,
   PromptAnalysis,
   PromptExecution,
   PromptExecutionReport
 } from "../../types/agent";
-import { filterExecutions, filterExecutionsByStatus, getExecutionStore } from "./execution-store";
+import {
+  filterExecutions,
+  filterExecutionsByStatus,
+  getExecutionStore,
+  listTrustRecords
+} from "./execution-store";
 import { runPromptExecution } from "./execution-engine";
 
 export function analyzePrompt(input: string): PromptAnalysis {
@@ -247,6 +253,84 @@ export function getPromptExecutionReport(
   executionId: string
 ): PromptExecutionReport | null {
   return getExecutionStore().reports[executionId] ?? null;
+}
+
+export function getTrustTrendSummary(): {
+  totalRecords: number;
+  topEnvironment:
+    | (PersistentTrustRecord & {
+        trustRatio: number;
+      })
+    | null;
+  topAction:
+    | (PersistentTrustRecord & {
+        trustRatio: number;
+      })
+    | null;
+  weakestEnvironment:
+    | (PersistentTrustRecord & {
+        trustRatio: number;
+      })
+    | null;
+  weakestAction:
+    | (PersistentTrustRecord & {
+        trustRatio: number;
+      })
+    | null;
+  recentRecords: PersistentTrustRecord[];
+} {
+  const records = listTrustRecords();
+  const environments = records.filter((record) => record.scope === "environment");
+  const actions = records.filter((record) => record.scope === "action");
+
+  function trustRatio(record: PersistentTrustRecord): number {
+    const total = record.successCount + record.triageCount;
+    if (total === 0) {
+      return 0;
+    }
+
+    return record.successCount / total;
+  }
+
+  function withRatio(record: PersistentTrustRecord | null) {
+    if (!record) {
+      return null;
+    }
+
+    return {
+      ...record,
+      trustRatio: trustRatio(record)
+    };
+  }
+
+  function sortStrongest(left: PersistentTrustRecord, right: PersistentTrustRecord) {
+    const ratioDelta = trustRatio(right) - trustRatio(left);
+    if (ratioDelta !== 0) {
+      return ratioDelta;
+    }
+
+    return (right.lastConfidenceScore ?? 0) - (left.lastConfidenceScore ?? 0);
+  }
+
+  function sortWeakest(left: PersistentTrustRecord, right: PersistentTrustRecord) {
+    const ratioDelta = trustRatio(left) - trustRatio(right);
+    if (ratioDelta !== 0) {
+      return ratioDelta;
+    }
+
+    return (left.lastConfidenceScore ?? 0) - (right.lastConfidenceScore ?? 0);
+  }
+
+  return {
+    totalRecords: records.length,
+    topEnvironment: withRatio([...environments].sort(sortStrongest)[0] ?? null),
+    topAction: withRatio([...actions].sort(sortStrongest)[0] ?? null),
+    weakestEnvironment: withRatio(
+      [...environments].sort(sortWeakest)[0] ?? null
+    ),
+    weakestAction: withRatio([...actions].sort(sortWeakest)[0] ?? null),
+    recentRecords: records.slice(0, 6)
+  };
 }
 
 export function executePrompt(input: string): {
