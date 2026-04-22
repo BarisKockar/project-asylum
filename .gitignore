@@ -9,3 +9,6 @@ node_modules/
 # Local operational data
 data/agent-executions.json
 data/project-asylum.db
+backups/
+release/bootstrap-profile.json
+release/install-state.json

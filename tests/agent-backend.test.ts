@@ -597,15 +597,36 @@ test("system and cognitive summaries expose trust trend fields", () => {
   assert.ok(Array.isArray(cognitiveSummary.trustTrend.recentTrustSignals));
   assert.equal(typeof systemSummary.telemetry.sampledLogSourceCount, "number");
   assert.equal(typeof systemSummary.telemetry.securitySignalCount, "number");
+  assert.ok(
+    systemSummary.telemetry.preferredLogSourceLabel === null ||
+      typeof systemSummary.telemetry.preferredLogSourceLabel === "string"
+  );
+  assert.ok(
+    systemSummary.telemetry.fallbackLogSourceLabel === null ||
+      typeof systemSummary.telemetry.fallbackLogSourceLabel === "string"
+  );
   assert.ok(Array.isArray(cognitiveSummary.exposure.openPorts));
   assert.ok(Array.isArray(cognitiveSummary.exposure.highlightedPorts));
   assert.ok(Array.isArray(cognitiveSummary.exposure.bruteForceSignals));
   assert.ok(Array.isArray(cognitiveSummary.exposure.problemSignals));
+  assert.ok(Array.isArray(cognitiveSummary.exposure.attackerIps));
+  assert.ok(Array.isArray(cognitiveSummary.exposure.portRecommendations));
+  assert.ok(Array.isArray(cognitiveSummary.exposure.immediateActions));
   assert.equal(typeof systemSummary.exposure.openPortCount, "number");
   assert.equal(typeof systemSummary.exposure.bruteForceSignalCount, "number");
   assert.equal(typeof systemSummary.exposure.attentionCount, "number");
+  assert.ok(Array.isArray(systemSummary.exposure.attackerIps));
+  assert.ok(Array.isArray(systemSummary.exposure.portRecommendations));
   assert.ok(Array.isArray(cognitiveSummary.telemetry.sampledLogSources));
   assert.ok(Array.isArray(cognitiveSummary.telemetry.securitySignals));
+  assert.ok(
+    cognitiveSummary.telemetry.preferredLogSourceLabel === null ||
+      typeof cognitiveSummary.telemetry.preferredLogSourceLabel === "string"
+  );
+  assert.ok(
+    cognitiveSummary.telemetry.fallbackLogSourceLabel === null ||
+      typeof cognitiveSummary.telemetry.fallbackLogSourceLabel === "string"
+  );
 });
 
 test("platform profile detects OS family and candidate log sources", () => {
@@ -620,7 +641,24 @@ test("platform profile detects OS family and candidate log sources", () => {
       (source) =>
         typeof source.path === "string" &&
         typeof source.exists === "boolean" &&
+        typeof source.readable === "boolean" &&
+        typeof source.sourceType === "string" &&
         typeof source.recommended === "boolean"
+    )
+  );
+  assert.ok(
+    profile.logSources.some(
+      (source) => source.sourceType === "command"
+    )
+  );
+  assert.ok(
+    profile.logSources.some(
+      (source) => source.preferred === true
+    )
+  );
+  assert.ok(
+    profile.logSources.every(
+      (source) => typeof source.priorityScore === "number"
     )
   );
 });
@@ -640,6 +678,16 @@ test("execution observations include telemetry/log discovery metadata", () => {
   assert.ok(Array.isArray(telemetry?.metadata?.sampledLogSources));
   assert.ok(Array.isArray(telemetry?.metadata?.previewLines));
   assert.ok(Array.isArray(telemetry?.metadata?.securitySignals));
+  assert.ok(
+    (telemetry?.metadata?.sampledLogSources as Array<Record<string, unknown>>).every(
+      (source) => typeof source.sourceType === "string"
+    )
+  );
+  assert.equal(
+    typeof (telemetry?.metadata?.sampledLogSources as Array<Record<string, unknown>>)[0]
+      ?.preferred,
+    "boolean"
+  );
 });
 
 test("risk engine can derive log anomaly risk from telemetry security signals", () => {
@@ -672,22 +720,38 @@ test("install scripts emit structured bootstrap and doctor output", () => {
   const setupRaw = execFileSync(
     process.execPath,
     ["--import", "tsx", "scripts/setup-install.ts"],
-    { cwd: process.cwd(), encoding: "utf8" }
+    {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: { ...process.env, PROJECT_ASYLUM_SKIP_INSTALL_STATE_WRITE: "1" }
+    }
   );
   const bootstrapRaw = execFileSync(
     process.execPath,
     ["--import", "tsx", "scripts/bootstrap-install.ts"],
-    { cwd: process.cwd(), encoding: "utf8" }
+    {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: { ...process.env, PROJECT_ASYLUM_SKIP_INSTALL_STATE_WRITE: "1" }
+    }
   );
   const doctorRaw = execFileSync(
     process.execPath,
     ["--import", "tsx", "scripts/install-doctor.ts"],
-    { cwd: process.cwd(), encoding: "utf8" }
+    {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: { ...process.env, PROJECT_ASYLUM_SKIP_INSTALL_STATE_WRITE: "1" }
+    }
   );
   const postcheckRaw = execFileSync(
     process.execPath,
     ["--import", "tsx", "scripts/postinstall-check.ts"],
-    { cwd: process.cwd(), encoding: "utf8" }
+    {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: { ...process.env, PROJECT_ASYLUM_SKIP_INSTALL_STATE_WRITE: "1" }
+    }
   );
 
   const setup = JSON.parse(setupRaw) as {
@@ -704,6 +768,7 @@ test("install scripts emit structured bootstrap and doctor output", () => {
     installationMode: string;
     safeByDefault: boolean;
     remediationEnabled: boolean;
+    bootstrapProfilePath: string;
     platformProfile: { osFamily: string; logSources: unknown[] };
     nextSteps: string[];
   };
@@ -733,13 +798,25 @@ test("install scripts emit structured bootstrap and doctor output", () => {
   assert.equal(bootstrap.installationMode, "observe-only");
   assert.equal(bootstrap.safeByDefault, true);
   assert.equal(bootstrap.remediationEnabled, false);
+  assert.ok(fs.existsSync(bootstrap.bootstrapProfilePath));
   assert.ok(bootstrap.platformProfile.logSources.length > 0);
+  assert.ok(
+    bootstrap.platformProfile.logSources.some(
+      (source: { sourceType?: string }) => source.sourceType === "command"
+    )
+  );
+  assert.ok(
+    bootstrap.platformProfile.logSources.some(
+      (source: { preferred?: boolean }) => source.preferred === true
+    )
+  );
   assert.ok(bootstrap.nextSteps.includes("npm run dev"));
   assert.equal(doctor.doctor, "project-asylum-install");
   assert.equal(doctor.installationMode, "observe-only");
   assert.equal(doctor.safeByDefault, true);
   assert.equal(doctor.remediationEnabled, false);
   assert.ok(doctor.checks.some((check) => check.id === "platform-detected"));
+  assert.ok(doctor.checks.some((check) => check.id === "log-fallback-available"));
   assert.equal(postcheck.postcheck, "project-asylum-install");
   assert.equal(postcheck.installMode, "observe-only");
   assert.equal(postcheck.safeByDefault, true);
@@ -788,8 +865,8 @@ test("demo scenarios are available and runnable for customer-facing critical mom
   assert.ok(scenarios.length >= 3);
   assert.ok(bruteForceScenario);
 
-  const bruteForce = runDemoScenario("brute-force-watch");
   const openPort = runDemoScenario("open-port-exposure");
+  const bruteForce = runDemoScenario("brute-force-watch");
 
   const bruteTelemetry = bruteForce.report.observations.find(
     (observation) => observation.kind === "telemetry"
@@ -803,6 +880,13 @@ test("demo scenarios are available and runnable for customer-facing critical mom
   assert.ok(openPort.report.observations.length > 0);
   assert.ok(openPort.report.risks.length > 0);
   assert.equal(openPort.execution.status, "needs-triage");
-  assert.ok(bruteSignals.length >= 3);
+  assert.ok(openPort.runtime.terminal.length >= 4);
+  assert.ok(openPort.runtime.highlightedPorts.length >= 1);
+  assert.ok(bruteSignals.length >= 14);
   assert.equal(bruteForce.execution.status, "needs-triage");
+  assert.ok(bruteForce.runtime.attackerIps.length >= 3);
+  assert.ok(bruteForce.runtime.terminal.length >= 16);
+  const cognitiveSummary = getCognitiveSummary();
+  assert.ok(cognitiveSummary.exposure.attackerIps.length >= 3);
+  assert.ok(cognitiveSummary.exposure.immediateActions.length > 0);
 });

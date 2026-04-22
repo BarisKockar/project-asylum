@@ -197,6 +197,12 @@ export type PlatformLogSource = {
   label: string;
   path: string;
   exists: boolean;
+  readable?: boolean;
+  sourceType?: "file" | "directory" | "command";
+  command?: string;
+  detectionMethod?: string;
+  priorityScore?: number;
+  preferred?: boolean;
   recommended: boolean;
 };
 

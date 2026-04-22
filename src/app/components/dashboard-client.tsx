@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import type {
   CognitiveSummary,
   PromptAnalysis,
   PromptExecution,
   SystemSummary
 } from "../lib/platform-data";
-import type { DemoScenario } from "../../lib/agent/demo-scenarios";
+import type { DemoRuntime, DemoScenario } from "../../lib/agent/demo-scenarios";
 
 type DashboardClientProps = {
   initialSystem: SystemSummary;
@@ -16,14 +16,50 @@ type DashboardClientProps = {
   initialDemoScenarios: DemoScenario[];
 };
 
+type InstallStepId = "setup" | "bootstrap" | "doctor" | "postcheck";
+
+type InstallStepResult = {
+  step: InstallStepId;
+  ok: boolean;
+  payload?: Record<string, unknown>;
+  error?: string;
+};
+
+const INSTALL_STEPS: Array<{
+  id: InstallStepId;
+  title: string;
+  description: string;
+}> = [
+  {
+    id: "setup",
+    title: "1. Setup",
+    description: ".env, data klasoru ve kurulum manifestini hazirlar."
+  },
+  {
+    id: "bootstrap",
+    title: "2. Bootstrap",
+    description: "OS, log kaynaklari ve execution store yolunu kesfeder."
+  },
+  {
+    id: "doctor",
+    title: "3. Doctor",
+    description: "Observe-only guvenlik ve log erisimi kontrollerini dogrular."
+  },
+  {
+    id: "postcheck",
+    title: "4. Postcheck",
+    description: "Kurulum sonrasi dosya ve guvenli varsayimlari tekrar kontrol eder."
+  }
+];
+
 export function DashboardClient({
   initialSystem,
   initialCognitive,
   initialExecutions,
   initialDemoScenarios
 }: DashboardClientProps) {
-  const [system] = useState(initialSystem);
-  const [cognitive] = useState(initialCognitive);
+  const [system, setSystem] = useState(initialSystem);
+  const [cognitive, setCognitive] = useState(initialCognitive);
   const [prompt, setPrompt] = useState(
     "localhost üzerindeki admin yüzeyini analiz et ve riskleri açıkla"
   );
@@ -31,6 +67,10 @@ export function DashboardClient({
   const [executions, setExecutions] = useState(initialExecutions);
   const [demoScenarios] = useState(initialDemoScenarios);
   const [activeScenarioId, setActiveScenarioId] = useState<string | null>(null);
+  const [activeDemoRuntime, setActiveDemoRuntime] = useState<DemoRuntime | null>(null);
+  const [visibleTerminalLines, setVisibleTerminalLines] = useState(0);
+  const [activeInstallStep, setActiveInstallStep] = useState<InstallStepId | null>(null);
+  const [installResults, setInstallResults] = useState<InstallStepResult[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -41,6 +81,94 @@ export function DashboardClient({
   const exposedPorts = cognitive.exposure.openPorts.slice(0, 6);
   const highlightedPorts = cognitive.exposure.highlightedPorts.slice(0, 6);
   const bruteForceSignals = cognitive.exposure.bruteForceSignals.slice(0, 3);
+  const attackerIps = cognitive.exposure.attackerIps.slice(0, 4);
+  const immediateActions = cognitive.exposure.immediateActions.slice(0, 4);
+  const portRecommendations = cognitive.exposure.portRecommendations.slice(0, 4);
+  const installChecklist = [
+    {
+      label: "Setup",
+      complete: system.installation.setupComplete
+    },
+    {
+      label: "Bootstrap",
+      complete: system.installation.bootstrapComplete
+    },
+    {
+      label: "Doctor",
+      complete: system.installation.doctorComplete
+    },
+    {
+      label: "Postcheck",
+      complete: system.installation.postcheckComplete
+    }
+  ];
+  const nextRequiredStep: InstallStepId | null = !system.installation.setupComplete
+    ? "setup"
+    : !system.installation.bootstrapComplete
+      ? "bootstrap"
+      : !system.installation.doctorComplete
+        ? "doctor"
+        : !system.installation.postcheckComplete
+          ? "postcheck"
+          : null;
+
+  const isInstallStepUnlocked = (step: InstallStepId) => {
+    if (step === "setup") {
+      return true;
+    }
+
+    if (step === "bootstrap") {
+      return system.installation.setupComplete;
+    }
+
+    if (step === "doctor") {
+      return system.installation.setupComplete && system.installation.bootstrapComplete;
+    }
+
+    return (
+      system.installation.setupComplete &&
+      system.installation.bootstrapComplete &&
+      system.installation.doctorComplete
+    );
+  };
+
+  useEffect(() => {
+    if (!activeDemoRuntime) {
+      setVisibleTerminalLines(0);
+      return;
+    }
+
+    setVisibleTerminalLines(1);
+    const interval = window.setInterval(() => {
+      setVisibleTerminalLines((current) => {
+        if (current >= activeDemoRuntime.terminal.length) {
+          window.clearInterval(interval);
+          return current;
+        }
+
+        return current + 1;
+      });
+    }, 180);
+
+    return () => window.clearInterval(interval);
+  }, [activeDemoRuntime]);
+
+  const refreshSummaries = async () => {
+    const [systemResponse, cognitiveResponse] = await Promise.all([
+      fetch("/api/system-summary"),
+      fetch("/api/cognitive-summary")
+    ]);
+
+    if (systemResponse.ok) {
+      const systemPayload = (await systemResponse.json()) as SystemSummary;
+      setSystem(systemPayload);
+    }
+
+    if (cognitiveResponse.ok) {
+      const cognitivePayload = (await cognitiveResponse.json()) as CognitiveSummary;
+      setCognitive(cognitivePayload);
+    }
+  };
 
   const handleAnalyze = () => {
     startTransition(async () => {
@@ -68,6 +196,8 @@ export function DashboardClient({
       };
       setResult(payload.analysis);
       setExecutions((current) => [payload.execution, ...current].slice(0, 12));
+      setActiveDemoRuntime(null);
+      await refreshSummaries();
     });
   };
 
@@ -95,24 +225,197 @@ export function DashboardClient({
         scenario: DemoScenario;
         execution: PromptExecution;
         report: { execution: PromptExecution };
+        runtime: DemoRuntime;
       };
 
       setPrompt(payload.scenario.prompt);
       setExecutions((current) => [payload.execution, ...current].slice(0, 12));
+      setActiveDemoRuntime(payload.runtime);
       setResult((current) =>
         current
           ? {
               ...current,
-              assistantResponse: `${payload.scenario.title} senaryosu calistirildi. Sistem bu senaryo icin ${payload.execution.status} durumunda bir execution olusturdu.`
+              assistantResponse: `${payload.scenario.title} senaryosu calistirildi. ${payload.runtime.summary}`
             }
-          : null
+          : {
+              input: payload.scenario.prompt,
+              normalizedGoal: payload.scenario.prompt,
+              detectedTargets: payload.execution.targets,
+              suggestedMode: payload.execution.mode,
+              actions: [],
+              riskLevel: payload.execution.riskLevel,
+              explanation: payload.runtime.summary,
+              intent: "demo-scenario",
+              expectedOutput: "Terminal akisi ve guvenlik panellerinde canli demo sonucu",
+              assistantResponse: `${payload.scenario.title} senaryosu calistirildi. ${payload.runtime.summary}`,
+              urgency: "elevated",
+              responseStyle: "demo",
+              constraints: ["observe-only"],
+              planSummary: "Demo terminalini ac ve guvenlik panellerindeki sonucu gozden gecir."
+            }
       );
+      await refreshSummaries();
       setActiveScenarioId(null);
+    });
+  };
+
+  const handleInstallStep = (step: InstallStepId) => {
+    startTransition(async () => {
+      setError(null);
+      setActiveInstallStep(step);
+
+      const response = await fetch("/api/install", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ step })
+      });
+
+      const payload = (await response.json()) as InstallStepResult;
+
+      if (!response.ok || !payload.ok) {
+        setError(payload.error ?? "Kurulum adimi basarisiz oldu.");
+        setInstallResults((current) => [
+          payload,
+          ...current.filter((entry) => entry.step !== step)
+        ]);
+        setActiveInstallStep(null);
+        return;
+      }
+
+      setInstallResults((current) => [
+        payload,
+        ...current.filter((entry) => entry.step !== step)
+      ]);
+      await refreshSummaries();
+      setActiveInstallStep(null);
     });
   };
 
   return (
     <>
+      {!system.installation.ready ? (
+        <>
+          <section className="hero installHero">
+            <div className="heroCopy">
+              <p className="eyebrow">Project Asylum Installer</p>
+              <h1>Kurulum tamamlanana kadar sadece hazirlik ekrani gosterilir</h1>
+              <p className="lead">
+                Once kaynak yollarini ve kurulum hazirlik durumunu kontrol et. Tum
+                adimlar tamamlandiginda ana guvenlik paneli otomatik olarak acilacak.
+              </p>
+            </div>
+
+            <aside className="heroStatus">
+              <span className="statusBadge">
+                {system.installation.ready ? "ready" : "install-required"}
+              </span>
+              <dl className="metricList">
+                <div>
+                  <dt>Kuruluma hazir mi?</dt>
+                  <dd>{system.installation.ready ? "Evet" : "Hayir"}</dd>
+                </div>
+                <div>
+                  <dt>Aktif log kaynagi</dt>
+                  <dd>{system.telemetry.preferredLogSourceLabel ?? "Belirlenemedi"}</dd>
+                </div>
+                <div>
+                  <dt>Yedek kaynak</dt>
+                  <dd>{system.telemetry.fallbackLogSourceLabel ?? "Yedek kaynak yok"}</dd>
+                </div>
+                <div>
+                  <dt>Calisma modu</dt>
+                  <dd>observe-only</dd>
+                </div>
+              </dl>
+            </aside>
+          </section>
+
+          <section className="section">
+            <div className="sectionHeading">
+              <p className="sectionEyebrow">Hazirlik</p>
+              <h2>Kaynak yolları ve kurulum durumu</h2>
+            </div>
+            <div className="sourceHealthGrid">
+              {system.installation.sourcePaths.map((source) => (
+                <article key={`${source.label}-${source.path}`} className="sourceHealthCard">
+                  <p className="sourceHealthLabel">{source.label}</p>
+                  <strong>{source.status === "detected" ? "Hazir" : "Bekleniyor"}</strong>
+                  <p>{source.path}</p>
+                </article>
+              ))}
+            </div>
+            <div className="chipRow compactRow installChecklistRow">
+              {installChecklist.map((item) => (
+                <span
+                  key={item.label}
+                  className={`chip ${item.complete ? "successChip" : "warningChip"}`}
+                >
+                  {item.label}: {item.complete ? "tamam" : "bekliyor"}
+                </span>
+              ))}
+            </div>
+          </section>
+
+          <section className="section">
+            <div className="sectionHeading">
+              <p className="sectionEyebrow">Kurulum Sihirbazi</p>
+              <h2>Adimlari sirasiyla tamamla</h2>
+            </div>
+            <p className="bodyText">
+              Siradaki zorunlu adim:{" "}
+              <strong>{nextRequiredStep ? nextRequiredStep.toUpperCase() : "tamamlandi"}</strong>
+            </p>
+            <div className="installGrid">
+              {INSTALL_STEPS.map((step) => {
+                const latestResult =
+                  installResults.find((entry) => entry.step === step.id) ?? null;
+                const unlocked = isInstallStepUnlocked(step.id);
+
+                return (
+                  <article key={step.id} className="installCard">
+                    <div className="installCardHeader">
+                      <div>
+                        <p className="installLabel">{step.title}</p>
+                        <strong>{step.description}</strong>
+                      </div>
+                      <button
+                        type="button"
+                        className="secondaryButton"
+                        onClick={() => handleInstallStep(step.id)}
+                        disabled={isPending || !unlocked}
+                      >
+                        {activeInstallStep === step.id
+                          ? "Calisiyor..."
+                          : unlocked
+                            ? "Calistir"
+                            : "Onceki adimi tamamla"}
+                      </button>
+                    </div>
+                    <p className="installStatus">
+                      {!unlocked
+                        ? "Bu adim bir onceki adim tamamlanmadan acilmaz."
+                        : latestResult
+                        ? latestResult.ok
+                          ? "Son durum: basarili"
+                          : "Son durum: hata"
+                        : "Henuz calistirilmadi"}
+                    </p>
+                    {latestResult?.payload ? (
+                      <div className="installOutput">
+                        <code>{JSON.stringify(latestResult.payload, null, 2)}</code>
+                      </div>
+                    ) : null}
+                  </article>
+                );
+              })}
+            </div>
+            {error ? <p className="errorText">{error}</p> : null}
+          </section>
+        </>
+      ) : (
+        <>
       <section className="hero">
         <div className="heroCopy">
           <p className="eyebrow">Project Asylum</p>
@@ -144,6 +447,14 @@ export function DashboardClient({
             <div>
               <dt>Host</dt>
               <dd>{system.host}</dd>
+            </div>
+            <div>
+              <dt>Aktif log kaynağı</dt>
+              <dd>{system.telemetry.preferredLogSourceLabel ?? "Belirlenemedi"}</dd>
+            </div>
+            <div>
+              <dt>Yedek kaynak</dt>
+              <dd>{system.telemetry.fallbackLogSourceLabel ?? "Yedek kaynak yok"}</dd>
             </div>
           </dl>
         </aside>
@@ -274,6 +585,41 @@ export function DashboardClient({
 
       <section className="section">
         <div className="sectionHeading">
+          <p className="sectionEyebrow">Kaynak Sağlığı</p>
+          <h2>Log keşfi şu an nasıl çalışıyor?</h2>
+        </div>
+        <div className="sourceHealthGrid">
+          <article className="sourceHealthCard">
+            <p className="sourceHealthLabel">Aktif Kaynak</p>
+            <strong>{system.telemetry.preferredLogSourceLabel ?? "Belirlenemedi"}</strong>
+            <p>
+              Sistem şu an telemetry ve güvenlik sinyallerini öncelikle bu kaynaktan
+              okumaya çalışıyor.
+            </p>
+          </article>
+          <article className="sourceHealthCard">
+            <p className="sourceHealthLabel">Yedek Kaynak</p>
+            <strong>{system.telemetry.fallbackLogSourceLabel ?? "Yedek kaynak yok"}</strong>
+            <p>
+              Aktif kaynak zayıflarsa veya okunamaz hale gelirse sistem bu kaynağa
+              kayabilir.
+            </p>
+          </article>
+          <article className="sourceHealthCard">
+            <p className="sourceHealthLabel">Keşif Sağlığı</p>
+            <strong>
+              {system.telemetry.sampledLogSourceCount > 0 ? "Saglikli" : "Sinirli"}
+            </strong>
+            <p>
+              {system.telemetry.sampledLogSourceCount} kaynak örneklendi,{" "}
+              {system.telemetry.securitySignalCount} güvenlik sinyali çıkarıldı.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section className="section">
+        <div className="sectionHeading">
           <p className="sectionEyebrow">Demo Senaryolari</p>
           <h2>Kritik anlari tek tikla goster</h2>
         </div>
@@ -305,6 +651,40 @@ export function DashboardClient({
             </article>
           ))}
         </div>
+        {activeDemoRuntime ? (
+          <article className="demoTerminalPanel">
+            <div className="demoTerminalHeader">
+              <div>
+                <p className="sectionEyebrow">Canli Demo Akisi</p>
+                <h3>Project Asylum terminal gorunumu</h3>
+              </div>
+              <span className="demoTerminalBadge">observe-only</span>
+            </div>
+            <p className="demoTerminalSummary">{activeDemoRuntime.summary}</p>
+            <div className="demoTerminalMeta">
+              <span>
+                Supheli IP:{" "}
+                {activeDemoRuntime.attackerIps.length
+                  ? activeDemoRuntime.attackerIps.join(", ")
+                  : "yok"}
+              </span>
+              <span>
+                Dikkat portu:{" "}
+                {activeDemoRuntime.highlightedPorts.length
+                  ? activeDemoRuntime.highlightedPorts.join(", ")
+                  : "yok"}
+              </span>
+            </div>
+            <div className="demoTerminalWindow">
+              {activeDemoRuntime.terminal.slice(0, visibleTerminalLines).map((entry) => (
+                <div key={`${entry.at}-${entry.line}`} className={`demoTerminalLine ${entry.level}`}>
+                  <span className="demoTerminalTime">{entry.at}</span>
+                  <span className="demoTerminalText">{entry.line}</span>
+                </div>
+              ))}
+            </div>
+          </article>
+        ) : null}
       </section>
 
       <section className="section">
@@ -339,6 +719,16 @@ export function DashboardClient({
                 <span className="chip">port sinyali yok</span>
               )}
             </div>
+            <div className="actionBlock">
+              <strong>Ne yapilmali?</strong>
+              <ul className="signalList">
+                {portRecommendations.length ? (
+                  portRecommendations.map((item) => <li key={item}>{item}</li>)
+                ) : (
+                  <li>Su an kapatma onerisi gerektiren belirgin bir port yok.</li>
+                )}
+              </ul>
+            </div>
           </article>
 
           <article className="securityPanel">
@@ -357,6 +747,20 @@ export function DashboardClient({
                 <li>Şu an belirgin brute force sinyali görünmüyor.</li>
               )}
             </ul>
+            <div className="actionBlock">
+              <strong>Supheli IP</strong>
+              <div className="chipRow compactRow">
+                {attackerIps.length ? (
+                  attackerIps.map((ip) => (
+                    <span key={ip} className="chip warningChip">
+                      {ip}
+                    </span>
+                  ))
+                ) : (
+                  <span className="chip">IP cikarilamadi</span>
+                )}
+              </div>
+            </div>
           </article>
 
           <article className="securityPanel">
@@ -375,6 +779,16 @@ export function DashboardClient({
                 <li>Şu an kritik dikkat sinyali görünmüyor.</li>
               )}
             </ul>
+            <div className="actionBlock">
+              <strong>Hemen ne yapilmali?</strong>
+              <ul className="signalList">
+                {immediateActions.length ? (
+                  immediateActions.map((item) => <li key={item}>{item}</li>)
+                ) : (
+                  <li>Su an icin acil aksiyon onerisi bulunmuyor.</li>
+                )}
+              </ul>
+            </div>
           </article>
         </div>
       </section>
@@ -447,6 +861,14 @@ export function DashboardClient({
             <p>{system.telemetry.topLogSourceLabel ?? "Henüz etiketli log kaynağı yok"}</p>
           </article>
           <article className="card">
+            <h3>Aktif log kaynağı</h3>
+            <p>{system.telemetry.preferredLogSourceLabel ?? "Belirlenemedi"}</p>
+          </article>
+          <article className="card">
+            <h3>Yedek log kaynağı</h3>
+            <p>{system.telemetry.fallbackLogSourceLabel ?? "Yedek kaynak yok"}</p>
+          </article>
+          <article className="card">
             <h3>Otomasyon seviyesi</h3>
             <p>{cognitive.automationEligibility}</p>
           </article>
@@ -501,6 +923,8 @@ export function DashboardClient({
           </div>
         </article>
       </section>
+        </>
+      )}
     </>
   );
 }

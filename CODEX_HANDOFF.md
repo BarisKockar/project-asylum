@@ -33,6 +33,19 @@ Ancak ilk müşteri kurulumu için anlaşılır demo/dashboard yüzeyi de artık
 7. Decision ve blocker’lar yazılır.
 8. Execution report local JSON store içinde kalıcı olarak saklanır.
 
+Son turdaki önemli ekleme:
+- demo senaryoları artık sabit örnek veri döndürmüyor
+- özellikle brute force demosu her çalıştırmada değişen çoklu IP ve çoklu başarısız giriş denemesi üretiyor
+- UI tarafında demo çalışınca terminal benzeri bir akış paneli açılıyor ve satırlar zaman içinde akıyormuş gibi gösteriliyor
+- bu akış hâlâ `observe-only`; hiçbir gerçek remediation veya sistem değişikliği tetiklemiyor
+- log kaynağı etiketleri artık doğrudan canlı OS keşfinden değil, `release/bootstrap-profile.json` içinden okunuyor
+- bu sayede bootstrap öncesi UI `Belirlenemedi / Yedek kaynak yok` gösteriyor; bootstrap sonrası kaynaklar görünür hale geliyor
+- UI artık iki aşamalı:
+  - kurulum tamamlanmadan sadece installer ekranı, kaynak yolları ve kurulum butonları görünür
+  - setup + bootstrap + doctor + postcheck tamamlandıktan sonra tam dashboard açılır
+  - kritik düzeltme: artık yalnızca `.env` veya `bootstrap-profile.json` varlığı yeterli değildir; tam UI için `release/install-state.json` içindeki adım durumları gerekir
+  - kurulum adımları artık zorunlu sırayla çalışır; kullanıcı `1 -> 2 -> 3 -> 4` dışına çıkamaz
+
 ## Important Files
 
 ### Agent backend
@@ -99,6 +112,33 @@ Observation kayıtları artık `metadata` taşıyor.
 - `sampledLogSources`
 - `securitySignals`
 
+Demo senaryoları overlay ile telemetry observation içine ek sinyal basabiliyor; bu sayede UI gerçek panel verisini aynı summary zincirinden üretmeye devam ediyor.
+
+Kurulum görünürlüğü için yeni kural:
+- `scripts/bootstrap-install.ts` artık `release/bootstrap-profile.json` üretir
+- `scripts/setup-install.ts` bu dosya varsa temizler
+- `src/app/lib/platform-data.ts` aktif/yedek log kaynağını yalnızca bu bootstrap profili varsa summary’ye taşır
+- amaç: ilk kurulum videosunda kaynak keşfi gerçekten bootstrap adımında olmuş gibi görünmeli
+- `SystemSummary.installation` artık şunları taşır:
+  - `ready`
+  - `setupComplete`
+  - `bootstrapComplete`
+  - `doctorComplete`
+  - `postcheckComplete`
+  - `sourcePaths`
+- `src/app/components/dashboard-client.tsx` bu installation state’e göre render yapar
+- kurulum scriptleri artık `release/install-state.json` yazar:
+  - `setup-install.ts` -> `setupComplete`
+  - `bootstrap-install.ts` -> `bootstrapComplete`
+  - `install-doctor.ts` -> `doctorComplete`
+  - `postinstall-check.ts` -> `postcheckComplete`
+- testler bu state dosyasını kirletmesin diye `PROJECT_ASYLUM_SKIP_INSTALL_STATE_WRITE=1` ile script doğrulaması yapar
+- `src/app/api/install/route.ts` artık sıra kontrolü yapar ve yanlış adımı `409` ile reddeder
+- `src/app/components/dashboard-client.tsx` kilitli adımlarda:
+  - butonda `Onceki adimi tamamla`
+  - açıklamada `Bu adim bir onceki adim tamamlanmadan acilmaz.`
+  yazar
+
 ### 3. Risk engine
 
 `risk-engine` observation metadata’dan somut risk üretiyor:
@@ -158,6 +198,25 @@ Plan adımları execution sırasında `taskRuns` kayıtlarına dönüşüyor:
 - hangi command hint kullanıldı
 - ne üretti
 - blocked mı completed mı
+
+Demo katmanı için ayrıca `/src/lib/agent/demo-scenarios.ts` içinde:
+- `DemoRuntime`
+- `DemoTerminalEvent`
+
+tipleri eklendi. `runDemoScenario()` artık yalnızca execution/report dönmüyor; aynı zamanda terminal panelinde gösterilecek canlı demo akışını da döndürüyor.
+
+Özellikle:
+- `brute-force-watch`:
+  - 14-28 arası değişen başarısız giriş sinyali
+  - 3-5 arası değişen saldırgan IP
+  - auth log benzeri terminal akışı
+- `open-port-exposure`:
+  - değişken port kümesi
+  - dikkat portları ve terminal akışı
+- `critical-posture-review`:
+  - brute force + config + port sinyallerini birleştiren karma demo akışı
+
+Bu sayede müşteri demosunda sonuçlar her seferinde aynı görünmüyor ve daha inandırıcı bir “canlı sistem” hissi oluşuyor.
 
 Collector görevleri artık gerçekten command hint bazlı ayrılıyor:
 - `port-scan-lite` -> network observation
@@ -252,10 +311,18 @@ Bu workspace’te doğrulanan son backend davranışları:
   - review port listesi
   - brute-force benzeri log sinyalleri
   - dikkat gerektiren durum sayısı
+  - brute-force yapan IP adresleri
+  - port bazlı önerilen kapatma/erişim kısıtlama aksiyonları
+  - ekranda doğrudan gösterilebilecek acil aksiyon listesi
 - dashboard artık müşteriye ilk kurulum sırasında gösterilebilecek üç net panel içeriyor:
   - Açık Portlar
   - Brute Force / Giriş Denemeleri
   - Dikkat Gerektiren Durumlar
+- bu paneller artık daha açıklayıcı hale getirildi:
+  - brute force kartında saldırgan IP'ler görünür
+  - açık port kartında port bazlı ne yapılmalı önerisi yazılı gelir
+  - dikkat kartında “hemen ne yapılmalı” maddeleri gösterilir
+- dashboard, prompt veya demo senaryosu çalıştıktan sonra `/api/system-summary` ve `/api/cognitive-summary` üzerinden kendini yeniler; yani paneller artık canlı şekilde güncellenir.
 - dashboard artık ayrıca tek tıkla çalıştırılabilen müşteri demo senaryoları içeriyor:
   - `brute-force-watch`
   - `open-port-exposure`
@@ -264,6 +331,16 @@ Bu workspace’te doğrulanan son backend davranışları:
 - terminalden tek komutlu demo doğrulaması hazır:
   - `npm run demo:scenarios`
   - çıktı içinde senaryo bazında `status`, `riskCount`, `blockerCount`, `openPortCount`, `securitySignalCount` görülür.
+- platform/log keşif katmanı güçlendirildi:
+  - artık sadece sabit yol tahmini yapmıyor
+  - `exists` yanında `readable` bilgisi de taşıyor
+  - `sourceType` olarak `file | directory | command` ayrımı yapıyor
+  - macOS için `log show`, Linux için `journalctl`, Windows için `wevtutil` gibi komut fallback'leri de profile ekleniyor
+- `install:doctor` artık ek olarak `log-fallback-available` kontrolü yapıyor; yani sabit dosya yolu zayıf olsa bile komut tabanlı log erişimi doğrulanabiliyor.
+- log kaynakları artık `priorityScore` ile puanlanıyor ve tek bir `preferred` kaynak işaretleniyor.
+- `collectLogObservation()` önce bu `preferred` kaynağı kullanıyor; böylece installer, observation ve UI aynı kaynağa hizalanıyor.
+- `SystemSummary` ve `CognitiveSummary` artık `preferredLogSourceLabel` taşıyor; UI'da “şu anda hangi kaynaktan okunuyor” satırı üretmek için hazır.
+- summary katmanı artık ayrıca `fallbackLogSourceLabel` da taşıyor; UI'da aktif kaynak yanında yedek/fallback kaynak da gösterilebiliyor.
 
 ## Demo Surface
 
@@ -294,6 +371,13 @@ Kurulum garantileri:
 - `remediation disabled`
 - platform ayrımı: `linux | macos | windows`
 - log kaynakları otomatik keşfedilir, ama sadece okunur preview alınır
+- UI içinde de artık bir kurulum sihirbazı var:
+  - `setup`
+  - `bootstrap`
+  - `doctor`
+  - `postcheck`
+  adımları butonlarla sırayla çalıştırılabiliyor
+- bu sihirbaz `/src/app/api/install/route.ts` üzerinden script'leri güvenli whitelist ile çağırıyor ve JSON sonuçlarını ekranda gösteriyor.
 
 ## Current UI Demo Surface
 

@@ -167,6 +167,18 @@ h2 {
   gap: 16px;
 }
 
+.sourceHealthGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.installGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
 .card,
 .panel {
   border-radius: 26px;
@@ -182,6 +194,89 @@ h2 {
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.035);
   box-shadow: var(--shadow);
+}
+
+.sourceHealthCard {
+  padding: 22px;
+  border-radius: 24px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+  box-shadow: var(--shadow);
+}
+
+.installCard {
+  padding: 22px;
+  border-radius: 24px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+  box-shadow: var(--shadow);
+}
+
+.installCardHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.installLabel {
+  margin-bottom: 10px;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.installCard strong {
+  display: block;
+  line-height: 1.55;
+}
+
+.installStatus {
+  margin-top: 16px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.installOutput {
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid var(--line);
+  overflow-x: auto;
+}
+
+.installOutput code {
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #d7e3ff;
+  font-family: "SF Mono", "Menlo", monospace;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.sourceHealthLabel {
+  margin-bottom: 10px;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.sourceHealthCard strong {
+  display: block;
+  margin-bottom: 12px;
+  font-size: 24px;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+}
+
+.sourceHealthCard p:last-child {
+  color: var(--muted);
+  line-height: 1.65;
 }
 
 .emphasisPanel {
@@ -216,6 +311,18 @@ h2 {
   margin-top: 14px;
   color: var(--muted);
   line-height: 1.65;
+}
+
+.actionBlock {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.actionBlock strong {
+  display: block;
+  margin-bottom: 10px;
+  color: var(--text);
 }
 
 .signalList {
@@ -474,6 +581,16 @@ h2 {
   line-height: 1.7;
 }
 
+.installChecklistRow {
+  margin-top: 16px;
+}
+
+.successChip {
+  background: rgba(100, 224, 179, 0.14);
+  border: 1px solid rgba(100, 224, 179, 0.26);
+  color: #9ef0ce;
+}
+
 .executionList {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -514,6 +631,101 @@ h2 {
   margin-top: 14px;
   color: var(--muted);
   line-height: 1.65;
+}
+
+.demoTerminalPanel {
+  margin-top: 18px;
+  padding: 22px;
+  border-radius: 26px;
+  border: 1px solid rgba(109, 147, 255, 0.18);
+  background:
+    radial-gradient(circle at top right, rgba(100, 224, 179, 0.12), transparent 30%),
+    linear-gradient(180deg, rgba(10, 16, 29, 0.95), rgba(5, 9, 18, 0.98));
+  box-shadow: var(--shadow);
+}
+
+.demoTerminalHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.demoTerminalHeader h3 {
+  margin-top: 4px;
+}
+
+.demoTerminalBadge {
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(100, 224, 179, 0.22);
+  background: rgba(100, 224, 179, 0.12);
+  color: #9ef0ce;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.demoTerminalSummary {
+  margin-top: 14px;
+  color: #dce7ff;
+  line-height: 1.7;
+}
+
+.demoTerminalMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 14px;
+  color: #97a9d1;
+  font-size: 13px;
+}
+
+.demoTerminalWindow {
+  margin-top: 18px;
+  padding: 16px;
+  border-radius: 20px;
+  background: rgba(1, 5, 12, 0.88);
+  border: 1px solid rgba(109, 147, 255, 0.16);
+  font-family: var(--font-mono, "SFMono-Regular", ui-monospace, monospace);
+  max-height: 360px;
+  overflow: auto;
+}
+
+.demoTerminalLine {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  gap: 12px;
+  padding: 6px 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #dce7ff;
+}
+
+.demoTerminalLine.info .demoTerminalText {
+  color: #a9c0ff;
+}
+
+.demoTerminalLine.warn .demoTerminalText {
+  color: #ffd38f;
+}
+
+.demoTerminalLine.alert .demoTerminalText {
+  color: #ff9d9d;
+}
+
+.demoTerminalLine.ok .demoTerminalText {
+  color: #9ef0ce;
+}
+
+.demoTerminalTime {
+  color: #7e91b8;
+}
+
+.demoTerminalText {
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .executionCard {
@@ -590,6 +802,8 @@ h2 {
   .layoutSplit,
   .cardGrid,
   .securityGrid,
+  .sourceHealthGrid,
+  .installGrid,
   .nextGrid,
   .analysisGrid,
   .scenarioGrid,

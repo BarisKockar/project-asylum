@@ -55,9 +55,39 @@ function safeCommand(command: string): string {
   }
 }
 
-function readLogPreview(logPath: string): string[] {
+function readLogPreview(source: {
+  path: string;
+  sourceType?: string;
+  command?: string;
+}): string[] {
   try {
-    const output = execSync(`tail -n 5 "${logPath}"`, {
+    if (source.sourceType === "command" && source.command) {
+      const output = execSync(source.command, {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"]
+      });
+
+      return output
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .slice(-10);
+    }
+
+    if (source.sourceType === "directory") {
+      const output = execSync(`find "${source.path}" -type f | head -n 3`, {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"]
+      });
+
+      return output
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .slice(0, 5);
+    }
+
+    const output = execSync(`tail -n 5 "${source.path}"`, {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"]
     });
@@ -199,12 +229,24 @@ export function collectConfigObservation(): ExecutionObservation {
 
 export function collectLogObservation(): ExecutionObservation {
   const profile = detectPlatformProfile();
-  const existingSources = profile.logSources.filter((source) => source.exists);
+  const existingSources = profile.logSources
+    .filter((source) => source.exists && source.readable !== false)
+    .sort((left, right) => {
+      if (left.preferred && !right.preferred) {
+        return -1;
+      }
+
+      if (!left.preferred && right.preferred) {
+        return 1;
+      }
+
+      return (right.priorityScore ?? 0) - (left.priorityScore ?? 0);
+    });
   const sampledSources = existingSources.slice(0, 2);
   const previews = sampledSources.map((source) => ({
     id: source.id,
     path: source.path,
-    lines: readLogPreview(source.path)
+    lines: readLogPreview(source)
   }));
   const previewLines = previews.flatMap((preview) => preview.lines);
   const securitySignals = detectSecurityLogSignals(previewLines);
@@ -221,7 +263,11 @@ export function collectLogObservation(): ExecutionObservation {
         id: source.id,
         label: source.label,
         path: source.path,
-        category: source.category
+        category: source.category,
+        sourceType: source.sourceType,
+        detectionMethod: source.detectionMethod,
+        priorityScore: source.priorityScore,
+        preferred: source.preferred
       })),
       previewLines: previewLines.slice(0, 10),
       securitySignals
