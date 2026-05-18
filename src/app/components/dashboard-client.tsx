@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
+
+import "../autonomy.css";
 import type {
   CognitiveSummary,
   PromptAnalysis,
@@ -22,6 +24,7 @@ type InstallStepResult = {
   step: InstallStepId;
   ok: boolean;
   payload?: Record<string, unknown>;
+  selfCheck?: Record<string, unknown>;
   error?: string;
 };
 
@@ -71,8 +74,21 @@ export function DashboardClient({
   const [visibleTerminalLines, setVisibleTerminalLines] = useState(0);
   const [activeInstallStep, setActiveInstallStep] = useState<InstallStepId | null>(null);
   const [installResults, setInstallResults] = useState<InstallStepResult[]>([]);
+  const [installToast, setInstallToast] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [decidingApprovalId, setDecidingApprovalId] = useState<string | null>(null);
+  const [pendingDecisionAction, setPendingDecisionAction] = useState<"approve" | "reject" | null>(null);
+  const [decisionRationale, setDecisionRationale] = useState("");
+  const [decisionError, setDecisionError] = useState<string | null>(null);
+  const [decisionSubmitting, setDecisionSubmitting] = useState(false);
+  const [decisionToast, setDecisionToast] = useState<string | null>(null);
+  const installStepRefs = useRef<Record<InstallStepId, HTMLElement | null>>({
+    setup: null,
+    bootstrap: null,
+    doctor: null,
+    postcheck: null
+  });
 
   const assistantMessage = result
     ? result.assistantResponse
@@ -153,10 +169,58 @@ export function DashboardClient({
     return () => window.clearInterval(interval);
   }, [activeDemoRuntime]);
 
+  useEffect(() => {
+    if (!nextRequiredStep || system.installation.ready) {
+      return;
+    }
+
+    const target = installStepRefs.current[nextRequiredStep];
+    if (!target) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 120);
+
+    return () => window.clearTimeout(timeout);
+  }, [
+    nextRequiredStep,
+    system.installation.ready,
+    system.installation.setupComplete,
+    system.installation.bootstrapComplete,
+    system.installation.doctorComplete,
+    system.installation.postcheckComplete
+  ]);
+
+  useEffect(() => {
+    if (!installToast) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setInstallToast(null);
+    }, 2400);
+
+    return () => window.clearTimeout(timeout);
+  }, [installToast]);
+
+  useEffect(() => {
+    if (!decisionToast) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setDecisionToast(null);
+    }, 3000);
+
+    return () => window.clearTimeout(timeout);
+  }, [decisionToast]);
+
   const refreshSummaries = async () => {
     const [systemResponse, cognitiveResponse] = await Promise.all([
-      fetch("/api/system-summary"),
-      fetch("/api/cognitive-summary")
+      fetch("/api/system-summary", { cache: "no-store" }),
+      fetch("/api/cognitive-summary", { cache: "no-store" })
     ]);
 
     if (systemResponse.ok) {
@@ -167,6 +231,71 @@ export function DashboardClient({
     if (cognitiveResponse.ok) {
       const cognitivePayload = (await cognitiveResponse.json()) as CognitiveSummary;
       setCognitive(cognitivePayload);
+    }
+  };
+
+  const openDecisionForm = (approvalId: string, action: "approve" | "reject") => {
+    setDecidingApprovalId(approvalId);
+    setPendingDecisionAction(action);
+    setDecisionRationale("");
+    setDecisionError(null);
+  };
+
+  const closeDecisionForm = () => {
+    setDecidingApprovalId(null);
+    setPendingDecisionAction(null);
+    setDecisionRationale("");
+    setDecisionError(null);
+  };
+
+  // Import the autonomy-section styles lazily via dynamic import on first
+  // render so the kit's main globals.css stays untouched. Side-effect
+  // import — Next.js bundles the CSS at build time when this module is
+  // included.
+
+  const submitApprovalDecision = async () => {
+    if (!decidingApprovalId || !pendingDecisionAction) {
+      return;
+    }
+
+    const trimmedRationale = decisionRationale.trim();
+    if (trimmedRationale.length < 4) {
+      setDecisionError("Kısa bir gerekçe yaz (en az birkaç kelime).");
+      return;
+    }
+
+    setDecisionSubmitting(true);
+    setDecisionError(null);
+
+    try {
+      const response = await fetch(`/api/approvals/${decidingApprovalId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: pendingDecisionAction,
+          decidedBy: "operator",
+          rationale: trimmedRationale
+        })
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        setDecisionError(payload.error ?? "Onay kararı gönderilemedi.");
+        return;
+      }
+
+      const verb =
+        pendingDecisionAction === "approve" ? "onaylandı" : "reddedildi";
+      setDecisionToast(`Aksiyon ${verb}. Bir sonraki çalıştırmada dikkate alınacak.`);
+      closeDecisionForm();
+      await refreshSummaries();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Beklenmeyen hata.";
+      setDecisionError(message);
+    } finally {
+      setDecisionSubmitting(false);
     }
   };
 
@@ -231,7 +360,7 @@ export function DashboardClient({
       setPrompt(payload.scenario.prompt);
       setExecutions((current) => [payload.execution, ...current].slice(0, 12));
       setActiveDemoRuntime(payload.runtime);
-      setResult((current) =>
+      setResult((current: PromptAnalysis | null) =>
         current
           ? {
               ...current,
@@ -288,9 +417,18 @@ export function DashboardClient({
         payload,
         ...current.filter((entry) => entry.step !== step)
       ]);
+      setInstallToast(
+        `${step.toUpperCase()} adimi tamamlandi. ${
+          step === "postcheck" ? "Panel acilmaya hazir." : "Siradaki zorunlu adima gec."
+        }`
+      );
       await refreshSummaries();
       setActiveInstallStep(null);
     });
+  };
+
+  const handleDownloadDiagnostics = () => {
+    window.location.href = "/api/install-diagnostics";
   };
 
   return (
@@ -356,6 +494,54 @@ export function DashboardClient({
                 </span>
               ))}
             </div>
+            {system.installation.selfCheck.available ? (
+              <div className="installHealthCard">
+                <div className="installHealthHeader">
+                  <div>
+                    <p className="sourceHealthLabel">Kurulum Sagligi</p>
+                    <strong>
+                      {system.installation.selfCheck.overallStatus === "pass"
+                        ? "Pilot kurulum saglikli gorunuyor"
+                        : "Kurulum raporu dikkat istiyor"}
+                    </strong>
+                  </div>
+                  <button
+                    type="button"
+                    className="secondaryButton"
+                    onClick={handleDownloadDiagnostics}
+                  >
+                    Tanilama indir
+                  </button>
+                </div>
+                <div className="chipRow compactRow">
+                  <span className="chip successChip">
+                    Kontrol: {system.installation.selfCheck.passedChecks}/
+                    {system.installation.selfCheck.totalChecks}
+                  </span>
+                  <span
+                    className={`chip ${
+                      system.installation.selfCheck.failedChecks > 0
+                        ? "warningChip"
+                        : "successChip"
+                    }`}
+                  >
+                    Hata: {system.installation.selfCheck.failedChecks}
+                  </span>
+                  <span
+                    className={`chip ${
+                      system.installation.selfCheck.popupReady
+                        ? "successChip"
+                        : "warningChip"
+                    }`}
+                  >
+                    Popup: {system.installation.selfCheck.popupReady ? "hazir" : "bekliyor"}
+                  </span>
+                </div>
+                <p className="bodyText compactText">
+                  Son rapor URL: {system.installation.selfCheck.launchUrl ?? "henüz yok"}
+                </p>
+              </div>
+            ) : null}
           </section>
 
           <section className="section">
@@ -363,6 +549,7 @@ export function DashboardClient({
               <p className="sectionEyebrow">Kurulum Sihirbazi</p>
               <h2>Adimlari sirasiyla tamamla</h2>
             </div>
+            {installToast ? <p className="installToast">{installToast}</p> : null}
             <p className="bodyText">
               Siradaki zorunlu adim:{" "}
               <strong>{nextRequiredStep ? nextRequiredStep.toUpperCase() : "tamamlandi"}</strong>
@@ -374,7 +561,13 @@ export function DashboardClient({
                 const unlocked = isInstallStepUnlocked(step.id);
 
                 return (
-                  <article key={step.id} className="installCard">
+                  <article
+                    key={step.id}
+                    ref={(node) => {
+                      installStepRefs.current[step.id] = node;
+                    }}
+                    className={`installCard ${nextRequiredStep === step.id ? "installCardActive" : ""}`}
+                  >
                     <div className="installCardHeader">
                       <div>
                         <p className="installLabel">{step.title}</p>
@@ -412,6 +605,15 @@ export function DashboardClient({
               })}
             </div>
             {error ? <p className="errorText">{error}</p> : null}
+            {system.installation.ready ? (
+              <div className="installReadyCallout">
+                <strong>Kurulum tamamlandi.</strong>
+                <p>
+                  Panel artik tam arayuze gecmeye hazir. Gerekirse sayfa otomatik olarak
+                  yenilenir veya sonraki acilista dogrudan ana dashboard gorunur.
+                </p>
+              </div>
+            ) : null}
           </section>
         </>
       ) : (
@@ -791,6 +993,196 @@ export function DashboardClient({
             </div>
           </article>
         </div>
+      </section>
+
+      <section className="section">
+        <div className="sectionHeading">
+          <p className="sectionEyebrow">Aksiyon</p>
+          <h2>Sistem ne yapmak istiyor?</h2>
+          <p className="sectionLead">
+            Aşağıda her risk için sistemin önerdiği aksiyonları görüyorsun.
+            Hiçbiri henüz uygulanmadı — bunlar sadece &quot;kararı senin onayına
+            bağlı&quot; planlar. &quot;Onayla&quot; dediklerin gelecekteki bir
+            aksiyon zincirinde dikkate alınacak; &quot;Reddet&quot; dediklerin
+            sistem tekrar önermeyecek.
+          </p>
+        </div>
+
+        {decisionToast ? (
+          <div className="installToast" role="status">
+            {decisionToast}
+          </div>
+        ) : null}
+
+        <div className="autonomySummary">
+          <p>{system.autonomy.summary}</p>
+          <div className="chipRow">
+            <span className="chip warningChip">
+              Onay bekliyor: {system.autonomy.pendingApprovalCount}
+            </span>
+            <span className="chip">
+              Otomasyona uygun: {system.autonomy.autoEligibleCount}
+            </span>
+            <span className="chip">
+              Engellendi: {system.autonomy.blockedCount}
+            </span>
+            <span className="chip successChip">
+              Onaylı: {system.autonomy.approvedCount}
+            </span>
+            <span className="chip">
+              Reddedildi: {system.autonomy.rejectedCount}
+            </span>
+          </div>
+        </div>
+
+        {system.autonomy.recommendedActions.length === 0 ? (
+          <article className="panel emptyActionPanel">
+            <p>
+              Şu an için bir aksiyon önerisi yok. Yukarıdaki kutuya bir analiz
+              isteği yazıp çalıştırırsan, sistem riskleri için aksiyon
+              önerileri üretir.
+            </p>
+          </article>
+        ) : (
+          <div className="actionGrid">
+            {system.autonomy.recommendedActions.map((action) => {
+              const isAwaiting = action.status === "awaiting-approval";
+              const isAuto = action.status === "auto-eligible";
+              const isApproved = action.status === "approved";
+              const isRejected = action.status === "rejected";
+              const isBlocked = action.status === "blocked";
+              const statusChipClass = isAwaiting
+                ? "warningChip"
+                : isAuto || isApproved
+                  ? "successChip"
+                  : isRejected
+                    ? "neutralChip"
+                    : "infoChip";
+              const isDecidingThis =
+                decidingApprovalId !== null &&
+                decidingApprovalId === action.approvalId;
+
+              return (
+                <article key={action.id} className="actionCard">
+                  <div className="actionHeader">
+                    <strong>{action.classLabel}</strong>
+                    <span className={`chip ${statusChipClass}`}>
+                      {action.statusLabel}
+                    </span>
+                  </div>
+                  <p className="actionIntent">{action.intent}</p>
+                  <dl className="actionMeta">
+                    <div>
+                      <dt>Hedef</dt>
+                      <dd>{action.target}</dd>
+                    </div>
+                    <div>
+                      <dt>Etki</dt>
+                      <dd>
+                        {action.blastRadiusLabel}
+                        {" · "}
+                        {action.reversible ? "geri alınabilir" : "geri dönüşü yok"}
+                      </dd>
+                    </div>
+                  </dl>
+
+                  {isBlocked && action.blockedReason ? (
+                    <p className="actionBlocked">
+                      <span aria-hidden="true">⚠️</span> {action.blockedReason}
+                    </p>
+                  ) : null}
+
+                  {isAwaiting && action.approvalId ? (
+                    isDecidingThis ? (
+                      <div className="decisionForm">
+                        <label className="decisionLabel">
+                          {pendingDecisionAction === "approve"
+                            ? "Onay için kısa gerekçe yaz:"
+                            : "Ret için kısa gerekçe yaz:"}
+                          <textarea
+                            value={decisionRationale}
+                            onChange={(event) =>
+                              setDecisionRationale(event.target.value)
+                            }
+                            rows={2}
+                            placeholder="Örn: Bu portu kapatmak güvenli, kullanan servis yok."
+                          />
+                        </label>
+                        {decisionError ? (
+                          <p className="decisionError">{decisionError}</p>
+                        ) : null}
+                        <div className="decisionButtons">
+                          <button
+                            type="button"
+                            className="primaryButton"
+                            disabled={decisionSubmitting}
+                            onClick={submitApprovalDecision}
+                          >
+                            {decisionSubmitting
+                              ? "Gönderiliyor..."
+                              : pendingDecisionAction === "approve"
+                                ? "Onayı tamamla"
+                                : "Reddi tamamla"}
+                          </button>
+                          <button
+                            type="button"
+                            className="secondaryButton"
+                            disabled={decisionSubmitting}
+                            onClick={closeDecisionForm}
+                          >
+                            Vazgeç
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="actionButtonRow">
+                        <button
+                          type="button"
+                          className="primaryButton"
+                          onClick={() =>
+                            openDecisionForm(action.approvalId!, "approve")
+                          }
+                        >
+                          Onayla
+                        </button>
+                        <button
+                          type="button"
+                          className="secondaryButton"
+                          onClick={() =>
+                            openDecisionForm(action.approvalId!, "reject")
+                          }
+                        >
+                          Reddet
+                        </button>
+                      </div>
+                    )
+                  ) : null}
+
+                  {isAuto ? (
+                    <p className="actionFootnote">
+                      Confidence yeterli görünüyor. Phase 2 executor açıldığında
+                      bu aksiyon otomatik uygulanmaya aday olur.
+                    </p>
+                  ) : null}
+
+                  {isApproved ? (
+                    <p className="actionFootnote successFootnote">
+                      Bu aksiyon operatör tarafından onaylandı; gerçek executor
+                      devreye alındığında uygulanacak.
+                    </p>
+                  ) : null}
+
+                  {isRejected ? (
+                    <p className="actionFootnote">
+                      Bu aksiyon reddedildi. Sistem aynı hedef için bir daha
+                      önermeyecek.
+                    </p>
+                  ) : null}
+                </article>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       <section className="section">

@@ -2,6 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 
 import type {
+  DryRunAction,
+  DryRunActionClass,
+  DryRunActionStatus,
+  DryRunBlastRadius,
   PolicyDecisionExplanation,
   PolicyDecisionDetail,
   PromptAnalysis,
@@ -20,6 +24,33 @@ import {
   listPromptExecutions
 } from "../../lib/agent/prompt-engine";
 import type { PlatformProfile } from "../../types/agent";
+
+// Plain-Turkish labels that the dashboard surfaces directly. Keeping the
+// mapping in the data layer means every consumer (dashboard, future
+// mobile/console UI, API clients) gets the same human-readable wording
+// without re-implementing it.
+const ACTION_CLASS_LABELS: Record<DryRunActionClass, string> = {
+  "network-isolation": "Ağ erişimini kısıtla",
+  "config-hardening": "Konfigürasyonu sıkılaştır",
+  "service-restart": "Servisi yeniden başlat",
+  "access-rotation": "Kimlik bilgilerini değiştir",
+  "logging-enable": "Detaylı log etkinleştir",
+  "no-op": "Aksiyon yok (gözlem)"
+};
+
+const ACTION_STATUS_LABELS: Record<DryRunActionStatus, string> = {
+  blocked: "Engellendi",
+  "awaiting-approval": "Onay bekliyor",
+  "auto-eligible": "Otomasyona uygun",
+  approved: "Onaylandı",
+  rejected: "Reddedildi"
+};
+
+const BLAST_RADIUS_LABELS: Record<DryRunBlastRadius, string> = {
+  narrow: "dar etki",
+  moderate: "orta etki",
+  wide: "geniş etki"
+};
 
 export type SystemSummary = {
   status: string;
@@ -95,6 +126,30 @@ export type SystemSummary = {
       path: string;
       status: "pending" | "detected";
     }>;
+  };
+  autonomy: {
+    summary: string;
+    recommendedActions: Array<{
+      id: string;
+      approvalId: string | null;
+      riskId: string;
+      class: DryRunActionClass;
+      classLabel: string;
+      target: string;
+      intent: string;
+      status: DryRunActionStatus;
+      statusLabel: string;
+      blastRadius: DryRunBlastRadius;
+      blastRadiusLabel: string;
+      reversible: boolean;
+      blockedReason: string | null;
+    }>;
+    pendingApprovalCount: number;
+    autoEligibleCount: number;
+    blockedCount: number;
+    approvedCount: number;
+    rejectedCount: number;
+    totalCount: number;
   };
 };
 
@@ -264,6 +319,68 @@ function describeContradictionGroup(group: {
   }
 
   return `Task akışı uyumsuzluğu: ${joinedItems}. Riskleri destekleyecek review/analysis adımları eksik veya akış sırası bozulmuş olabilir.`;
+}
+
+function buildAutonomySummary(report: PromptExecutionReport | null): SystemSummary["autonomy"] {
+  const rawActions = report?.dryRun?.actions ?? [];
+
+  const recommendedActions = rawActions.map((action) => ({
+    id: action.id,
+    approvalId: action.approvalId ?? null,
+    riskId: action.riskId,
+    class: action.class,
+    classLabel: ACTION_CLASS_LABELS[action.class] ?? action.class,
+    target: action.target,
+    intent: action.intent,
+    status: action.status,
+    statusLabel: ACTION_STATUS_LABELS[action.status] ?? action.status,
+    blastRadius: action.blastRadius,
+    blastRadiusLabel: BLAST_RADIUS_LABELS[action.blastRadius] ?? action.blastRadius,
+    reversible: action.reversible,
+    blockedReason: action.blockedReason
+  }));
+
+  const pendingApprovalCount = recommendedActions.filter(
+    (action) => action.status === "awaiting-approval"
+  ).length;
+  const autoEligibleCount = recommendedActions.filter(
+    (action) => action.status === "auto-eligible"
+  ).length;
+  const blockedCount = recommendedActions.filter(
+    (action) => action.status === "blocked"
+  ).length;
+  const approvedCount = recommendedActions.filter(
+    (action) => action.status === "approved"
+  ).length;
+  const rejectedCount = recommendedActions.filter(
+    (action) => action.status === "rejected"
+  ).length;
+
+  let summary: string;
+  if (recommendedActions.length === 0) {
+    summary = "Sistem şu an için yeni bir aksiyon önermiyor.";
+  } else if (pendingApprovalCount > 0) {
+    summary = `${pendingApprovalCount} aksiyon senin onayını bekliyor; karar vermeden uygulanmayacak.`;
+  } else if (blockedCount === recommendedActions.length) {
+    summary = "Aksiyonlar şu an güvenli olmadığı için engellendi. Sistem önce ek kanıt toplamak istiyor.";
+  } else if (approvedCount > 0) {
+    summary = `${approvedCount} aksiyon onaylandı; uygulanmayı bekliyor (gerçek aksiyon henüz açık değil).`;
+  } else if (autoEligibleCount > 0) {
+    summary = `${autoEligibleCount} aksiyon düşük riskli; otomasyon açıldığında uygulanabilir.`;
+  } else {
+    summary = `${recommendedActions.length} aksiyon değerlendiriliyor.`;
+  }
+
+  return {
+    summary,
+    recommendedActions,
+    pendingApprovalCount,
+    autoEligibleCount,
+    blockedCount,
+    approvedCount,
+    rejectedCount,
+    totalCount: recommendedActions.length
+  };
 }
 
 function readBootstrappedPlatformProfile(): PlatformProfile | null {
@@ -481,7 +598,8 @@ export function getSystemSummary(): SystemSummary {
       portRecommendations,
       topRecommendation: portRecommendations[0] ?? null
     },
-    installation
+    installation,
+    autonomy: buildAutonomySummary(report)
   };
 }
 
