@@ -524,29 +524,108 @@ test("contradictory integrity keeps automation conservative", () => {
 
 test("reasoning, critic and decision surface contradiction-aware guidance", () => {
   const analysis = createAnalysis({
+    detectedTargets: ["localhost", "configuration"]
+  });
+  // Observation has risky signals but risk-engine derives no risk for them
+  // (signals exist outside the configuration risk path), creating a real
+  // signals-without-derived-risk contradiction at reasoning stage.
+  const observations: PromptExecutionReport["observations"] = [
+    createHostRuntimeObservation(),
+    {
+      kind: "telemetry",
+      detail: "Log ornegi toplandi.",
+      confidence: 0.7,
+      metadata: {
+        riskySignals: ["NODE_ENV=unset", "interactive-shell=/bin/zsh"],
+        securitySignals: ["unusual access pattern"]
+      }
+    }
+  ];
+  const risks: PromptExecutionReport["risks"] = [];
+
+  const reasoning = buildReasoningTrace(analysis, observations, risks);
+  const critic = buildCriticTrace(analysis, observations, risks, reasoning);
+  // Pass observations + empty taskRuns so decision-engine sees the real
+  // post-task contradiction state (risk-without-review-task cannot fire
+  // because risks.length === 0 here).
+  const decision = deriveExecutionDecision(
+    analysis,
+    risks,
+    critic,
+    undefined,
+    observations,
+    []
+  );
+
+  assert.match(reasoning.belief.summary, /tutarsızlıklar|tutarsizlik/i);
+  assert.match(reasoning.nextInference, /tutarsizlik|contradiction/i);
+  assert.ok(critic.riskFlags.includes("evidence-coherence-review"));
+  assert.match(critic.summary, /contradiction/i);
+  assert.ok(decision.blockers.includes("evidence-coherence-review"));
+  assert.match(decision.rationale, /Kanıt zincirinde tutarsizlik/i);
+});
+
+test("decision-engine flags risk-without-review-task when taskRuns lack analysis/review", () => {
+  const analysis = createAnalysis();
+  const risks: PromptExecutionReport["risks"] = [
+    {
+      id: "risk-admin-surface",
+      severity: "high",
+      title: "Admin surface",
+      rationale: "Admin yuzeyi disa acik.",
+      sourceKinds: ["network-surface"],
+      score: 0.82
+    }
+  ];
+  const taskRunsWithoutReview: PromptExecutionReport["taskRuns"] = [
+    {
+      stepId: "step-collect-evidence",
+      taskType: "collector",
+      commandHint: "port-scan-lite",
+      status: "completed",
+      attempt: 1,
+      summary: "Port tarama tamamlandi.",
+      produced: ["open-ports"],
+      executedAt: new Date().toISOString()
+    }
+  ];
+
+  const decision = deriveExecutionDecision(
+    analysis,
+    risks,
+    undefined,
+    undefined,
+    [createHostRuntimeObservation()],
+    taskRunsWithoutReview
+  );
+
+  assert.ok(decision.blockers.includes("evidence-coherence-review"));
+  assert.match(decision.rationale, /Kanıt zincirinde tutarsizlik/i);
+});
+
+test("reasoning does not flag contradiction without real signal-risk mismatch", () => {
+  // After the integrity-contradiction fix, a single high-severity risk
+  // alongside a normal host-runtime observation should NOT manufacture a
+  // contradiction at reasoning stage (previously the fake decision/taskRuns
+  // injected by reasoning-engine would always fire risk-without-review-task).
+  const analysis = createAnalysis({
     detectedTargets: ["localhost", "admin-panel"]
   });
   const risks: PromptExecutionReport["risks"] = [
     {
       id: "risk-admin-surface",
       severity: "high",
-      title: "Acik admin paneli",
-      rationale: "Disa acik admin paneli bulundu.",
+      title: "Admin yuzey",
+      rationale: "Admin yuzey disa acik.",
       sourceKinds: ["network-surface"],
-      score: 0.84
+      score: 0.82
     }
   ];
 
   const reasoning = buildReasoningTrace(analysis, [createHostRuntimeObservation()], risks);
-  const critic = buildCriticTrace(analysis, risks, reasoning);
-  const decision = deriveExecutionDecision(analysis, risks, critic);
 
-  assert.match(reasoning.belief.summary, /tutarsızlık|tutarsizlik/i);
-  assert.match(reasoning.nextInference, /contradiction/i);
-  assert.ok(critic.riskFlags.includes("evidence-coherence-review"));
-  assert.match(critic.summary, /contradiction/i);
-  assert.ok(decision.blockers.includes("evidence-coherence-review"));
-  assert.match(decision.rationale, /Kanıt zincirinde tutarsizlik/i);
+  assert.doesNotMatch(reasoning.belief.summary, /tutarsızlık|tutarsizlik/i);
+  assert.doesNotMatch(reasoning.nextInference, /contradiction/i);
 });
 
 test("executePrompt persists integrity summary", () => {

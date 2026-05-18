@@ -5,27 +5,21 @@ import {
 } from "./policy-engine";
 import { deriveExecutionContradictions } from "./integrity-engine";
 
+type ExecutionObservation = PromptExecutionReport["observations"][number];
 type ExecutionRisk = PromptExecutionReport["risks"][number];
 type ReasoningTrace = PromptExecutionReport["reasoning"];
 type CriticTrace = PromptExecutionReport["critic"];
 
 export function buildCriticTrace(
   analysis: PromptAnalysis,
+  observations: ExecutionObservation[],
   risks: ExecutionRisk[],
   reasoning: ReasoningTrace
 ): CriticTrace {
   const riskFlags: string[] = [];
   const contradictions = deriveExecutionContradictions({
-    observations: [],
-    risks,
-    taskRuns: [],
-    decision: {
-      status: "completed",
-      rationale: "",
-      blockers: [],
-      primaryBlockerReason: null,
-      nextStep: ""
-    }
+    observations,
+    risks
   });
   const highOrCritical = risks.filter(
     (risk) => risk.severity === "high" || risk.severity === "critical"
@@ -81,10 +75,11 @@ export function buildCriticTrace(
 
 export function rerunCriticTrace(
   analysis: PromptAnalysis,
+  observations: ExecutionObservation[],
   risks: ExecutionRisk[],
   reasoning: ReasoningTrace
 ): CriticTrace {
-  return buildCriticTrace(analysis, risks, reasoning);
+  return buildCriticTrace(analysis, observations, risks, reasoning);
 }
 
 export function refineCriticTrace(
@@ -99,11 +94,7 @@ export function refineCriticTrace(
     previousTaskRuns
   );
 
-  if (
-    policyContext.collectorAttempts < 1 ||
-    policyContext.hasCriticalRisk ||
-    policyContext.reviewPorts.length > 0
-  ) {
+  if (policyContext.collectorAttempts < 1) {
     return {
       ...critic,
       policyMatches: evaluateBlockerPolicies({

@@ -11,20 +11,15 @@ export function deriveExecutionDecision(
   analysis: PromptAnalysis,
   risks: PromptExecutionReport["risks"],
   critic?: PromptExecutionReport["critic"],
-  policyInsight?: PromptExecutionReport["policyInsight"]
+  policyInsight?: PromptExecutionReport["policyInsight"],
+  observations: PromptExecutionReport["observations"] = [],
+  taskRuns?: PromptExecutionReport["taskRuns"]
 ): ExecutionDecision {
   const blockers: string[] = [];
   const contradictions = deriveExecutionContradictions({
-    observations: [],
+    observations,
     risks,
-    taskRuns: [],
-    decision: {
-      status: "completed",
-      rationale: "",
-      blockers: [],
-      primaryBlockerReason: null,
-      nextStep: ""
-    }
+    taskRuns
   });
   const criticalRiskCount = risks.filter((risk) => risk.severity === "critical").length;
   const highRiskCount = risks.filter((risk) => risk.severity === "high").length;

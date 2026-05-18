@@ -130,15 +130,20 @@ export function runExecutionTasks(
       };
     }
 
+    const rerunRisks = scoreExecutionRisks(analysis, observations);
     const rerunCritic = rerunCriticTrace(
       analysis,
-      scoreExecutionRisks(analysis, observations),
-      rerunReasoningTrace(analysis, observations, scoreExecutionRisks(analysis, observations))
+      observations,
+      rerunRisks,
+      rerunReasoningTrace(analysis, observations, rerunRisks)
     );
     const rerunDecision = deriveExecutionDecision(
       analysis,
-      scoreExecutionRisks(analysis, observations),
-      rerunCritic
+      rerunRisks,
+      rerunCritic,
+      undefined,
+      observations,
+      existingTaskRuns
     );
 
     return {

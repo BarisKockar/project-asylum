@@ -83,7 +83,7 @@ export function runPromptExecution(
     existingReport?.taskRuns ?? []
   );
   const critic = refineCriticTrace(
-    buildCriticTrace(analysis, risks, reasoning),
+    buildCriticTrace(analysis, observations, risks, reasoning),
     observations,
     risks,
     existingReport?.taskRuns ?? []
@@ -107,7 +107,9 @@ export function runPromptExecution(
     analysis,
     risks,
     critic,
-    policyInsight
+    policyInsight,
+    observations,
+    taskRuns
   );
   const integrity = buildExecutionIntegrity({
     analysis,

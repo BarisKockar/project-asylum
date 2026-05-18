@@ -83,32 +83,40 @@ function collectSignalCount(observations: ExecutionObservation[]): number {
 export function deriveExecutionContradictions(input: {
   observations: ExecutionObservation[];
   risks: ExecutionRisk[];
-  taskRuns: ExecutionTaskRun[];
-  decision: ExecutionDecision;
+  taskRuns?: ExecutionTaskRun[];
+  decision?: ExecutionDecision;
 }): string[] {
   const contradictions: string[] = [];
   const signalCount = collectSignalCount(input.observations);
   const hasHighSeverityRisk = input.risks.some((risk) =>
     ["high", "critical"].includes(risk.severity)
   );
-  const hasReviewTask = input.taskRuns.some((taskRun) =>
-    ["analysis", "review"].includes(taskRun.taskType)
-  );
 
   if (signalCount > 0 && input.risks.length === 0) {
     contradictions.push("signals-without-derived-risk");
   }
 
-  if (hasHighSeverityRisk && input.decision.status === "completed") {
-    contradictions.push("high-risk-marked-completed");
+  if (input.decision) {
+    if (hasHighSeverityRisk && input.decision.status === "completed") {
+      contradictions.push("high-risk-marked-completed");
+    }
+
+    if (
+      input.decision.blockers.length > 0 &&
+      input.decision.status === "completed"
+    ) {
+      contradictions.push("blockers-with-completed-status");
+    }
   }
 
-  if (input.decision.blockers.length > 0 && input.decision.status === "completed") {
-    contradictions.push("blockers-with-completed-status");
-  }
+  if (input.taskRuns !== undefined) {
+    const hasReviewTask = input.taskRuns.some((taskRun) =>
+      ["analysis", "review"].includes(taskRun.taskType)
+    );
 
-  if (input.risks.length > 0 && !hasReviewTask) {
-    contradictions.push("risk-without-review-task");
+    if (input.risks.length > 0 && !hasReviewTask) {
+      contradictions.push("risk-without-review-task");
+    }
   }
 
   return contradictions;

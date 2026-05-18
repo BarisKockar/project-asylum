@@ -20,15 +20,7 @@ export function buildReasoningTrace(
 ): ReasoningTrace {
   const contradictions = deriveExecutionContradictions({
     observations,
-    risks,
-    taskRuns: [],
-    decision: {
-      status: "completed",
-      rationale: "",
-      blockers: [],
-      primaryBlockerReason: null,
-      nextStep: ""
-    }
+    risks
   });
   const supportKinds = unique([
     ...observations
@@ -97,11 +89,14 @@ export function buildReasoningTrace(
     },
     hypotheses,
     priorityHypothesisId: priorityHypothesis?.id ?? null,
-    nextInference: priorityHypothesis
-      ? contradictions.length > 0
-        ? `${priorityHypothesis.title} hipotezini doğrulamadan önce contradiction kaynaklarını çöz ve critic zincirini yeniden çalıştır.`
-        : `${priorityHypothesis.title} hipotezini collector ve critic zincirinde önce doğrula.`
-      : "Ek observation topla ve yeni hipotez üret."
+    nextInference:
+      contradictions.length > 0
+        ? priorityHypothesis
+          ? `${priorityHypothesis.title} hipotezini doğrulamadan önce contradiction kaynaklarını çöz ve critic zincirini yeniden çalıştır.`
+          : `Kanıt zincirinde tutarsizlik tespit edildi (${contradictions.join(", ")}); önce observation/risk türetimini yenile.`
+        : priorityHypothesis
+          ? `${priorityHypothesis.title} hipotezini collector ve critic zincirinde önce doğrula.`
+          : "Ek observation topla ve yeni hipotez üret."
   };
 }
 
