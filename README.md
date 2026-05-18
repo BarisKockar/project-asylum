@@ -55,16 +55,16 @@ Customer-facing demo scenarios:
   - Kritik Dikkat Ozeti
 
 Detailed instructions:
-- [INSTALLATION.md](/Users/bariskockar/Desktop/bilet-app/project%20asylum/INSTALLATION.md)
+- [INSTALLATION.md](INSTALLATION.md)
 
 ## Release Surface
 
 Release-facing assets:
-- [release/install-manifest.json](/Users/bariskockar/Desktop/bilet-app/project%20asylum/release/install-manifest.json)
-- [release/README.md](/Users/bariskockar/Desktop/bilet-app/project%20asylum/release/README.md)
-- [release/VERSION.json](/Users/bariskockar/Desktop/bilet-app/project%20asylum/release/VERSION.json)
-- [scripts/install.sh](/Users/bariskockar/Desktop/bilet-app/project%20asylum/scripts/install.sh)
-- [scripts/install.ps1](/Users/bariskockar/Desktop/bilet-app/project%20asylum/scripts/install.ps1)
+- [release/install-manifest.json](release/install-manifest.json)
+- [release/README.md](release/README.md)
+- [release/VERSION.json](release/VERSION.json)
+- [scripts/install.sh](scripts/install.sh)
+- [scripts/install.ps1](scripts/install.ps1)
 
 ## Safety Model
 
@@ -77,16 +77,18 @@ Current installation guarantees:
 
 ## Documentation
 
-- [PROJECT_BLUEPRINT.md](/Users/bariskockar/Desktop/bilet-app/project%20asylum/PROJECT_BLUEPRINT.md)
-- [COGNITIVE_ARCHITECTURE.md](/Users/bariskockar/Desktop/bilet-app/project%20asylum/COGNITIVE_ARCHITECTURE.md)
-- [TRUST_AND_AUTONOMY_MODEL.md](/Users/bariskockar/Desktop/bilet-app/project%20asylum/TRUST_AND_AUTONOMY_MODEL.md)
-- [AI_TRAINING_STRATEGY.md](/Users/bariskockar/Desktop/bilet-app/project%20asylum/AI_TRAINING_STRATEGY.md)
+- [PROJECT_BLUEPRINT.md](PROJECT_BLUEPRINT.md)
+- [COGNITIVE_ARCHITECTURE.md](COGNITIVE_ARCHITECTURE.md)
+- [TRUST_AND_AUTONOMY_MODEL.md](TRUST_AND_AUTONOMY_MODEL.md)
+- [AI_TRAINING_STRATEGY.md](AI_TRAINING_STRATEGY.md)
+- [PRODUCTION_READINESS_CHECKLIST.md](PRODUCTION_READINESS_CHECKLIST.md)
+- [WINDOWS_VM_TEST_PLAN.md](WINDOWS_VM_TEST_PLAN.md)
 
 ## Status
 
 The project currently has a working backend-oriented prototype with installation scaffolding and automated tests.
 
 Validation status:
-- `npm test` currently passes
+- `npm test` currently passes (20/20)
 - installation bootstrap, doctor and post-install checks are covered by tests
 - trust trend summaries and policy-aware decisions are covered by tests
