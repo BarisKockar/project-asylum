@@ -31,6 +31,10 @@ import { buildCriticTrace } from "../src/lib/agent/critic-engine";
 import { getCognitiveSummary, getSystemSummary } from "../src/app/lib/platform-data";
 import { scoreExecutionRisks } from "../src/lib/agent/risk-engine";
 import { buildExecutionIntegrity } from "../src/lib/agent/integrity-engine";
+import {
+  getActiveSecurityKnowledgeProfile,
+  getActiveSecurityKnowledgeProfileName
+} from "../src/lib/agent/security-knowledge";
 import type { PromptAnalysis, PromptExecutionReport } from "../src/types/agent";
 
 function createAnalysis(
@@ -767,6 +771,99 @@ test("trust history applies across different prompts in the same environment and
   assert.equal(withUnrelated.confidenceScore, base.confidenceScore);
   assert.match(withRelated.confidenceFactors.join(" "), /action-history-success=1/);
   assert.match(withUnrelated.confidenceFactors.join(" "), /action-history-success=0/);
+});
+
+test("security knowledge profile override changes review surfaces", () => {
+  const previous = process.env.PROJECT_ASYLUM_SECURITY_PROFILE;
+
+  try {
+    delete process.env.PROJECT_ASYLUM_SECURITY_PROFILE;
+    const defaultProfile = getActiveSecurityKnowledgeProfile();
+    const defaultName = getActiveSecurityKnowledgeProfileName();
+
+    process.env.PROJECT_ASYLUM_SECURITY_PROFILE = "strict-soc";
+    const strict = getActiveSecurityKnowledgeProfile();
+    const strictName = getActiveSecurityKnowledgeProfileName();
+
+    process.env.PROJECT_ASYLUM_SECURITY_PROFILE = "lenient-lab";
+    const lenient = getActiveSecurityKnowledgeProfile();
+
+    process.env.PROJECT_ASYLUM_SECURITY_PROFILE = "no-such-profile";
+    const fallbackName = getActiveSecurityKnowledgeProfileName();
+
+    // Default profile carries the baseline review set.
+    assert.equal(defaultName, "default");
+    assert.ok(defaultProfile.reviewProcessKeywords.includes("frida"));
+    assert.ok(defaultProfile.reviewPorts.includes(3306));
+    assert.ok(defaultProfile.adminPanelEscalationPorts.includes(8080));
+
+    // Strict profile strictly extends the keyword/port surface and
+    // covers modern offensive tooling that the default omits.
+    assert.equal(strictName, "strict-soc");
+    assert.ok(strict.reviewProcessKeywords.includes("mimikatz"));
+    assert.ok(strict.reviewProcessKeywords.includes("cobaltstrike"));
+    assert.ok(strict.reviewPorts.includes(445));
+    assert.ok(strict.reviewPorts.includes(3389));
+    assert.ok(strict.adminPanelEscalationPorts.includes(4444));
+    assert.ok(strict.logSecurityKeywords.includes("rootkit"));
+
+    // Lab profile keeps a minimal surface; sanity-check it differs from
+    // strict.
+    assert.equal(lenient.reviewProcessKeywords.length < strict.reviewProcessKeywords.length, true);
+    assert.equal(lenient.reviewPorts.length < strict.reviewPorts.length, true);
+    assert.equal(lenient.adminPanelEscalationPorts.length, 0);
+
+    // Unknown env value falls back to the document's activeProfile.
+    assert.equal(fallbackName, "default");
+  } finally {
+    if (previous === undefined) {
+      delete process.env.PROJECT_ASYLUM_SECURITY_PROFILE;
+    } else {
+      process.env.PROJECT_ASYLUM_SECURITY_PROFILE = previous;
+    }
+  }
+});
+
+test("risk engine escalates admin panel severity using security knowledge ports", () => {
+  const previous = process.env.PROJECT_ASYLUM_SECURITY_PROFILE;
+
+  try {
+    process.env.PROJECT_ASYLUM_SECURITY_PROFILE = "lenient-lab";
+    const analysis = createAnalysis({
+      detectedTargets: ["localhost", "admin-panel", "network-surface"]
+    });
+    const observations: PromptExecutionReport["observations"] = [
+      {
+        kind: "network-surface",
+        detail: "Dinleyen servisler.",
+        confidence: 0.81,
+        metadata: { ports: [8080], reviewPorts: [8080] }
+      }
+    ];
+
+    const risksLenient = scoreExecutionRisks(analysis, observations);
+    const adminRiskLenient = risksLenient.find(
+      (risk) => risk.id === "risk-admin-surface"
+    );
+
+    // lenient-lab has no admin escalation ports, so 8080 cannot trigger critical
+    assert.equal(adminRiskLenient?.severity, "high");
+
+    process.env.PROJECT_ASYLUM_SECURITY_PROFILE = "default";
+    const risksDefault = scoreExecutionRisks(analysis, observations);
+    const adminRiskDefault = risksDefault.find(
+      (risk) => risk.id === "risk-admin-surface"
+    );
+
+    // default includes 8080 as an escalation port, so severity becomes critical
+    assert.equal(adminRiskDefault?.severity, "critical");
+  } finally {
+    if (previous === undefined) {
+      delete process.env.PROJECT_ASYLUM_SECURITY_PROFILE;
+    } else {
+      process.env.PROJECT_ASYLUM_SECURITY_PROFILE = previous;
+    }
+  }
 });
 
 test("policy insight explanation exposes matched and pending rules", () => {

@@ -1,0 +1,114 @@
+{
+  "activeProfile": "default",
+  "profiles": {
+    "default": {
+      "reviewProcessKeywords": [
+        "nc",
+        "ncat",
+        "netcat",
+        "socat",
+        "tcpdump",
+        "wireshark",
+        "mitmproxy",
+        "frida"
+      ],
+      "reviewPorts": [
+        22,
+        2375,
+        2376,
+        3306,
+        5432,
+        5601,
+        6379,
+        8000,
+        8080,
+        8443,
+        9000,
+        9200
+      ],
+      "adminPanelEscalationPorts": [8000, 8080, 8443, 9000],
+      "logSecurityKeywords": [
+        "failed password",
+        "authentication failure",
+        "sudo",
+        "denied",
+        "error",
+        "invalid user",
+        "security",
+        "firewall"
+      ]
+    },
+    "strict-soc": {
+      "reviewProcessKeywords": [
+        "nc",
+        "ncat",
+        "netcat",
+        "socat",
+        "tcpdump",
+        "wireshark",
+        "mitmproxy",
+        "frida",
+        "mimikatz",
+        "cobaltstrike",
+        "metasploit",
+        "beacon",
+        "psexec",
+        "powersploit",
+        "empire"
+      ],
+      "reviewPorts": [
+        21,
+        22,
+        23,
+        25,
+        53,
+        110,
+        135,
+        139,
+        445,
+        1433,
+        1521,
+        2375,
+        2376,
+        3306,
+        3389,
+        4444,
+        5432,
+        5601,
+        5900,
+        5985,
+        5986,
+        6379,
+        8000,
+        8080,
+        8443,
+        9000,
+        9200,
+        27017
+      ],
+      "adminPanelEscalationPorts": [8000, 8080, 8443, 9000, 4444],
+      "logSecurityKeywords": [
+        "failed password",
+        "authentication failure",
+        "sudo",
+        "denied",
+        "error",
+        "invalid user",
+        "security",
+        "firewall",
+        "rootkit",
+        "exploit",
+        "BAD SU",
+        "audit:",
+        "kernel:",
+        "ssh:"
+      ]
+    },
+    "lenient-lab": {
+      "reviewProcessKeywords": ["mimikatz", "cobaltstrike", "metasploit"],
+      "reviewPorts": [22, 3306, 5432],
+      "adminPanelEscalationPorts": [],
+      "logSecurityKeywords": ["failed password", "authentication failure"]
+    }
+  }
+}

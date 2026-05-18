@@ -1,4 +1,5 @@
 import type { PromptAnalysis, PromptExecutionReport } from "../../types/agent";
+import { getActiveSecurityKnowledgeProfile } from "./security-knowledge";
 
 type ExecutionObservation = PromptExecutionReport["observations"][number];
 type ExecutionRisk = PromptExecutionReport["risks"][number];
@@ -138,7 +139,10 @@ export function scoreExecutionRisks(
   }
 
   if (analysis.detectedTargets.includes("admin-panel")) {
-    const severity = reviewPorts.some((port) => [8000, 8080, 8443, 9000].includes(port))
+    const securityProfile = getActiveSecurityKnowledgeProfile();
+    const severity = reviewPorts.some((port) =>
+      securityProfile.adminPanelEscalationPorts.includes(port)
+    )
       ? "critical"
       : "high";
     risks.push({

@@ -3,6 +3,7 @@ import { execSync } from "node:child_process";
 
 import type { PromptAnalysis, PromptExecutionReport } from "../../types/agent";
 import { detectPlatformProfile } from "./platform-profile";
+import { getActiveSecurityKnowledgeProfile } from "./security-knowledge";
 
 type ExecutionObservation = PromptExecutionReport["observations"][number];
 type ListeningService = {
@@ -11,17 +12,6 @@ type ListeningService = {
   port: number | null;
   protocol: string;
 };
-
-const REVIEW_PROCESS_KEYWORDS = [
-  "nc",
-  "ncat",
-  "netcat",
-  "socat",
-  "tcpdump",
-  "wireshark",
-  "mitmproxy",
-  "frida"
-];
 
 function processBasename(processPath: string): string {
   const segments = processPath.split("/");
@@ -103,20 +93,15 @@ function readLogPreview(source: {
 }
 
 function detectSecurityLogSignals(lines: string[]): string[] {
-  const keywords = [
-    "failed password",
-    "authentication failure",
-    "sudo",
-    "denied",
-    "error",
-    "invalid user",
-    "security",
-    "firewall"
-  ];
-
-  return lines.filter((line) =>
-    keywords.some((keyword) => line.toLowerCase().includes(keyword))
+  const profile = getActiveSecurityKnowledgeProfile();
+  const keywords = profile.logSecurityKeywords.map((keyword) =>
+    keyword.toLowerCase()
   );
+
+  return lines.filter((line) => {
+    const normalized = line.toLowerCase();
+    return keywords.some((keyword) => normalized.includes(keyword));
+  });
 }
 
 function parseListeningServices(output: string): ListeningService[] {
@@ -141,12 +126,13 @@ function parseListeningServices(output: string): ListeningService[] {
 }
 
 export function collectProcessObservation(): ExecutionObservation {
+  const profile = getActiveSecurityKnowledgeProfile();
   const processLines = safeCommand("ps -axo comm | sed -n '2,12p'")
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
   const reviewProcesses = processLines.filter((line) =>
-    REVIEW_PROCESS_KEYWORDS.includes(processBasename(line))
+    profile.reviewProcessKeywords.includes(processBasename(line))
   );
 
   return {
@@ -164,6 +150,7 @@ export function collectProcessObservation(): ExecutionObservation {
 }
 
 export function collectNetworkObservation(): ExecutionObservation {
+  const profile = getActiveSecurityKnowledgeProfile();
   const listeningOutput = safeCommand(
     "lsof -nP -iTCP -sTCP:LISTEN | sed -n '2,8p'"
   );
@@ -176,9 +163,7 @@ export function collectNetworkObservation(): ExecutionObservation {
     .map((service) => service.port)
     .filter((port): port is number => typeof port === "number");
   const reviewPorts = ports.filter((port) =>
-    [22, 2375, 2376, 3306, 5432, 5601, 6379, 8000, 8080, 8443, 9000, 9200].includes(
-      port
-    )
+    profile.reviewPorts.includes(port)
   );
 
   return {
