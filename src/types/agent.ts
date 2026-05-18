@@ -186,7 +186,48 @@ export type PromptExecutionReport = {
     primaryBlockerReason?: PolicyDecisionDetail | null;
     nextStep: string;
   };
+  dryRun?: DryRunReport;
   generatedAt: string;
+};
+
+export type DryRunActionClass =
+  | "network-isolation"
+  | "config-hardening"
+  | "service-restart"
+  | "access-rotation"
+  | "logging-enable"
+  | "no-op";
+
+export type DryRunActionStatus =
+  | "blocked"
+  | "awaiting-approval"
+  | "auto-eligible";
+
+export type DryRunBlastRadius = "narrow" | "moderate" | "wide";
+
+export type DryRunAction = {
+  id: string;
+  riskId: string;
+  class: DryRunActionClass;
+  target: string;
+  intent: string;
+  reversible: boolean;
+  blastRadius: DryRunBlastRadius;
+  evidenceRequired: string[];
+  status: DryRunActionStatus;
+  blockedReason: string | null;
+};
+
+export type DryRunReport = {
+  actions: DryRunAction[];
+  summary: string;
+  attemptedAt: string;
+  executableCount: number;
+  awaitingApprovalCount: number;
+  blockedCount: number;
+  blockedByPolicy: boolean;
+  blockedByIntegrity: boolean;
+  blockedByTrust: boolean;
 };
 
 export type PersistentTrustRecord = {

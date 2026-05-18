@@ -41,6 +41,7 @@ import {
   getActiveAgentThresholdProfileName
 } from "../src/lib/agent/threshold-config";
 import { buildExecutionPlan } from "../src/lib/agent/planning-engine";
+import { deriveDryRunReport } from "../src/lib/agent/dry-run-engine";
 import type { PromptAnalysis, PromptExecutionReport } from "../src/types/agent";
 
 function createAnalysis(
@@ -1058,6 +1059,261 @@ test("strict-soc integrity threshold demotes evidence-score below custom cutoff"
       process.env.PROJECT_ASYLUM_THRESHOLD_PROFILE = previous;
     }
   }
+});
+
+test("dry-run engine maps risks to candidate actions with trust-aware status", () => {
+  const analysis = createAnalysis({
+    detectedTargets: ["localhost", "admin-panel", "network-surface"]
+  });
+  const observations: PromptExecutionReport["observations"] = [
+    createHostRuntimeObservation(),
+    {
+      kind: "network-surface",
+      detail: "",
+      confidence: 0.81,
+      metadata: { ports: [8080], reviewPorts: [8080] }
+    }
+  ];
+  const risks: PromptExecutionReport["risks"] = [
+    {
+      id: "risk-network-exposure",
+      severity: "high",
+      title: "",
+      rationale: "",
+      sourceKinds: ["network-surface"],
+      score: 0.82
+    },
+    {
+      id: "risk-admin-surface",
+      severity: "critical",
+      title: "",
+      rationale: "",
+      sourceKinds: ["network-surface"],
+      score: 0.95
+    }
+  ];
+
+  // Scenario A: observe-only trust → every action must be blocked with
+  // a trust-specific reason regardless of decision blockers.
+  const observeOnlyReport = deriveDryRunReport({
+    analysis,
+    observations,
+    risks,
+    decision: {
+      status: "completed",
+      rationale: "",
+      blockers: [],
+      primaryBlockerReason: null,
+      nextStep: ""
+    },
+    trust: {
+      confidenceScore: 0.4,
+      confidenceFactors: [],
+      environmentTrustScore: 0.3,
+      actionTrustScore: 0.3,
+      automationEligibility: "observe-only",
+      approvalRequirementReason: ""
+    }
+  });
+
+  assert.ok(observeOnlyReport.actions.length >= 3);
+  assert.ok(observeOnlyReport.actions.every((action) => action.status === "blocked"));
+  assert.ok(
+    observeOnlyReport.actions.every((action) =>
+      action.blockedReason?.includes("observe-only")
+    )
+  );
+  assert.equal(observeOnlyReport.blockedByTrust, true);
+
+  // Each risk produced at least one action; admin-surface fans out into
+  // both isolation and credential rotation.
+  const networkActions = observeOnlyReport.actions.filter(
+    (action) => action.riskId === "risk-network-exposure"
+  );
+  const adminActions = observeOnlyReport.actions.filter(
+    (action) => action.riskId === "risk-admin-surface"
+  );
+  assert.equal(networkActions.length, 1);
+  assert.equal(adminActions.length, 2);
+  assert.ok(
+    adminActions.some((action) => action.class === "network-isolation")
+  );
+  assert.ok(
+    adminActions.some((action) => action.class === "access-rotation")
+  );
+
+  // Network-isolation must surface review ports in its target so the UI
+  // can render them.
+  assert.match(
+    networkActions[0].target,
+    /8080/
+  );
+
+  // Scenario B: low-risk-auto trust + clean integrity + no blockers →
+  // actions transition to auto-eligible.
+  const autoReport = deriveDryRunReport({
+    analysis,
+    observations,
+    risks,
+    decision: {
+      status: "completed",
+      rationale: "",
+      blockers: [],
+      primaryBlockerReason: null,
+      nextStep: ""
+    },
+    trust: {
+      confidenceScore: 0.92,
+      confidenceFactors: [],
+      environmentTrustScore: 0.9,
+      actionTrustScore: 0.88,
+      automationEligibility: "low-risk-auto",
+      approvalRequirementReason: ""
+    },
+    integrity: {
+      coverageScore: 1,
+      taskCompletionScore: 1,
+      evidenceScore: 0.9,
+      coherenceScore: 1,
+      status: "strong",
+      pilotReady: true,
+      summary: "",
+      observedKinds: [],
+      requiredKinds: [],
+      missingKinds: [],
+      contradictionGroups: [],
+      contradictions: [],
+      contradictionCount: 0,
+      completedTasks: 1,
+      totalTasks: 1
+    }
+  });
+
+  assert.ok(autoReport.actions.every((action) => action.status === "auto-eligible"));
+  assert.equal(autoReport.executableCount, autoReport.actions.length);
+  assert.equal(autoReport.blockedCount, 0);
+  assert.equal(autoReport.awaitingApprovalCount, 0);
+
+  // Scenario C: approval-required trust → actions await human approval.
+  const approvalReport = deriveDryRunReport({
+    analysis,
+    observations,
+    risks,
+    decision: {
+      status: "completed",
+      rationale: "",
+      blockers: [],
+      primaryBlockerReason: null,
+      nextStep: ""
+    },
+    trust: {
+      confidenceScore: 0.7,
+      confidenceFactors: [],
+      environmentTrustScore: 0.6,
+      actionTrustScore: 0.6,
+      automationEligibility: "approval-required",
+      approvalRequirementReason: ""
+    }
+  });
+
+  assert.ok(
+    approvalReport.actions.every((action) => action.status === "awaiting-approval")
+  );
+  assert.equal(approvalReport.awaitingApprovalCount, approvalReport.actions.length);
+});
+
+test("dry-run engine blocks when integrity has contradictions", () => {
+  const analysis = createAnalysis();
+  const observations: PromptExecutionReport["observations"] = [
+    createHostRuntimeObservation()
+  ];
+  const risks: PromptExecutionReport["risks"] = [
+    {
+      id: "risk-config-hardening",
+      severity: "medium",
+      title: "",
+      rationale: "",
+      sourceKinds: ["configuration"],
+      score: 0.5
+    }
+  ];
+
+  const report = deriveDryRunReport({
+    analysis,
+    observations,
+    risks,
+    decision: {
+      status: "completed",
+      rationale: "",
+      blockers: [],
+      primaryBlockerReason: null,
+      nextStep: ""
+    },
+    trust: {
+      confidenceScore: 0.9,
+      confidenceFactors: [],
+      environmentTrustScore: 0.9,
+      actionTrustScore: 0.9,
+      automationEligibility: "low-risk-auto",
+      approvalRequirementReason: ""
+    },
+    integrity: {
+      coverageScore: 0.5,
+      taskCompletionScore: 0.5,
+      evidenceScore: 0.6,
+      coherenceScore: 0.5,
+      status: "partial",
+      pilotReady: false,
+      summary: "",
+      observedKinds: [],
+      requiredKinds: [],
+      missingKinds: [],
+      contradictionGroups: [],
+      contradictions: ["high-risk-marked-completed"],
+      contradictionCount: 1,
+      completedTasks: 1,
+      totalTasks: 1
+    }
+  });
+
+  assert.equal(report.actions.length, 1);
+  assert.equal(report.actions[0].status, "blocked");
+  assert.match(report.actions[0].blockedReason ?? "", /tutarsizlik/i);
+  assert.equal(report.blockedByIntegrity, true);
+});
+
+test("executePrompt persists a dry-run report under the execution", () => {
+  resetExecutionStoreForTests();
+
+  const result = executePrompt(
+    "localhost admin panelini analiz et ve açık port risklerini açıkla"
+  );
+  const report = getPromptExecutionReport(result.execution.id);
+
+  assert.ok(report?.dryRun);
+  assert.ok(Array.isArray(report?.dryRun?.actions));
+  assert.equal(
+    typeof report?.dryRun?.executableCount,
+    "number"
+  );
+  assert.equal(
+    typeof report?.dryRun?.blockedCount,
+    "number"
+  );
+  assert.equal(
+    typeof report?.dryRun?.summary,
+    "string"
+  );
+  // No real remediation was issued — the report exists, but it is a
+  // recommendation surface, not an execution log.
+  assert.ok(
+    report?.dryRun?.actions.every(
+      (action) =>
+        action.status === "blocked" ||
+        action.status === "awaiting-approval" ||
+        action.status === "auto-eligible"
+    )
+  );
 });
 
 test("planning-engine inserts a deep-validation step when critic flags coherence review", () => {
