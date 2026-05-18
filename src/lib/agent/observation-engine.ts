@@ -14,8 +14,30 @@ type ListeningService = {
 };
 
 function processBasename(processPath: string): string {
-  const segments = processPath.split("/");
+  // Handles both POSIX and Windows path separators so reviewProcessKeyword
+  // matching works regardless of the collector's source format.
+  const segments = processPath.split(/[\\/]/);
   return segments[segments.length - 1] ?? processPath;
+}
+
+function getCurrentOsFamily(): "macos" | "linux" | "windows" | "unknown" {
+  if (process.platform === "darwin") {
+    return "macos";
+  }
+
+  if (process.platform === "linux") {
+    return "linux";
+  }
+
+  if (process.platform === "win32") {
+    return "windows";
+  }
+
+  return "unknown";
+}
+
+function escapePowerShellSingleQuoted(value: string): string {
+  return value.replace(/'/g, "''");
 }
 
 function detectPrimarySurface(analysis: PromptAnalysis): string {
@@ -64,7 +86,24 @@ function readLogPreview(source: {
         .slice(-10);
     }
 
+    const family = getCurrentOsFamily();
+
     if (source.sourceType === "directory") {
+      if (family === "windows") {
+        const escaped = escapePowerShellSingleQuoted(source.path);
+        const psCommand = `Get-ChildItem -Path '${escaped}' -File -ErrorAction SilentlyContinue | Select-Object -First 3 -ExpandProperty FullName`;
+        const output = execSync(
+          `powershell -NoProfile -NonInteractive -Command "${psCommand.replace(/"/g, '\\"')}"`,
+          { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }
+        );
+
+        return output
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter(Boolean)
+          .slice(0, 5);
+      }
+
       const output = execSync(`find "${source.path}" -type f | head -n 3`, {
         encoding: "utf8",
         stdio: ["ignore", "pipe", "ignore"]
@@ -75,6 +114,21 @@ function readLogPreview(source: {
         .map((line) => line.trim())
         .filter(Boolean)
         .slice(0, 5);
+    }
+
+    if (family === "windows") {
+      const escaped = escapePowerShellSingleQuoted(source.path);
+      const psCommand = `Get-Content -Path '${escaped}' -Tail 5 -ErrorAction SilentlyContinue`;
+      const output = execSync(
+        `powershell -NoProfile -NonInteractive -Command "${psCommand.replace(/"/g, '\\"')}"`,
+        { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }
+      );
+
+      return output
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .slice(-5);
     }
 
     const output = execSync(`tail -n 5 "${source.path}"`, {
@@ -125,12 +179,63 @@ function parseListeningServices(output: string): ListeningService[] {
     });
 }
 
-export function collectProcessObservation(): ExecutionObservation {
-  const profile = getActiveSecurityKnowledgeProfile();
-  const processLines = safeCommand("ps -axo comm | sed -n '2,12p'")
+// Windows `netstat -ano` listing example (English locale):
+//   Proto  Local Address          Foreign Address        State           PID
+//   TCP    0.0.0.0:135            0.0.0.0:0              LISTENING       1234
+// The parser tolerates IPv6 brackets and falls back to "unknown" for the
+// process name because netstat does not surface it — operators can join
+// against `tasklist /FI "PID eq 1234"` separately if they need names.
+// Exported so unit tests can exercise the Windows path on a non-Windows host.
+export function parseNetstatListening(output: string): ListeningService[] {
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => /LISTENING/i.test(line) && /^(TCP|TCPv?6)/i.test(line))
+    .map((line) => {
+      const parts = line.split(/\s+/);
+      const protoRaw = parts[0] ?? "tcp";
+      const local = parts[1] ?? "";
+      const pidValue = Number(parts[parts.length - 1]);
+
+      const lastColon = local.lastIndexOf(":");
+      const portStr = lastColon >= 0 ? local.slice(lastColon + 1) : "";
+      const portNumber = Number(portStr);
+
+      return {
+        process: "unknown",
+        pid: Number.isFinite(pidValue) ? pidValue : null,
+        port: Number.isFinite(portNumber) ? portNumber : null,
+        protocol: protoRaw.toLowerCase().includes("6") ? "tcp6" : "tcp"
+      };
+    });
+}
+
+function collectProcessLines(): string[] {
+  const family = getCurrentOsFamily();
+
+  if (family === "windows") {
+    // PowerShell Get-Process surfaces process names without requiring admin
+    // privileges. We limit to 12 to mirror the POSIX `sed -n '2,12p'` bound.
+    const psCommand =
+      "Get-Process | Select-Object -First 12 -ExpandProperty ProcessName";
+    return safeCommand(
+      `powershell -NoProfile -NonInteractive -Command "${psCommand}"`
+    )
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+  }
+
+  return safeCommand("ps -axo comm | sed -n '2,12p'")
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
+}
+
+export function collectProcessObservation(): ExecutionObservation {
+  const profile = getActiveSecurityKnowledgeProfile();
+  const processLines = collectProcessLines();
   const reviewProcesses = processLines.filter((line) =>
     profile.reviewProcessKeywords.includes(processBasename(line))
   );
@@ -142,6 +247,7 @@ export function collectProcessObservation(): ExecutionObservation {
       : "Surec listesi okunamadi veya sinirli ortam nedeniyle gorunur veri alinmadi.",
     confidence: processLines.length ? 0.78 : 0.46,
     metadata: {
+      osFamily: getCurrentOsFamily(),
       sampledProcesses: processLines.slice(0, 8),
       sampledCount: processLines.length,
       reviewProcesses
@@ -149,16 +255,36 @@ export function collectProcessObservation(): ExecutionObservation {
   };
 }
 
-export function collectNetworkObservation(): ExecutionObservation {
-  const profile = getActiveSecurityKnowledgeProfile();
-  const listeningOutput = safeCommand(
-    "lsof -nP -iTCP -sTCP:LISTEN | sed -n '2,8p'"
-  );
-  const listeningLines = listeningOutput
+function collectListeningServicesByPlatform(): {
+  raw: string;
+  services: ListeningService[];
+  lineSummaries: string[];
+} {
+  const family = getCurrentOsFamily();
+
+  if (family === "windows") {
+    const raw = safeCommand("netstat -ano");
+    const services = parseNetstatListening(raw).slice(0, 8);
+    const lineSummaries = services.map((service) =>
+      `${service.protocol}:${service.port ?? "?"}`
+    );
+    return { raw, services, lineSummaries };
+  }
+
+  const raw = safeCommand("lsof -nP -iTCP -sTCP:LISTEN | sed -n '2,8p'");
+  const services = parseListeningServices(raw);
+  const lineSummaries = raw
     .split("\n")
     .map((line) => line.trim())
-    .filter(Boolean);
-  const listeningServices = parseListeningServices(listeningOutput);
+    .filter(Boolean)
+    .map((line) => line.split(/\s+/).slice(0, 2).join(":"));
+  return { raw, services, lineSummaries };
+}
+
+export function collectNetworkObservation(): ExecutionObservation {
+  const profile = getActiveSecurityKnowledgeProfile();
+  const { services: listeningServices, lineSummaries } =
+    collectListeningServicesByPlatform();
   const ports = listeningServices
     .map((service) => service.port)
     .filter((port): port is number => typeof port === "number");
@@ -168,14 +294,12 @@ export function collectNetworkObservation(): ExecutionObservation {
 
   return {
     kind: "network-surface",
-    detail: listeningLines.length
-      ? `Dinleyen servis ornekleri: ${listeningLines
-          .map((line) => line.split(/\s+/).slice(0, 2).join(":"))
-          .slice(0, 4)
-          .join(", ")}.`
+    detail: lineSummaries.length
+      ? `Dinleyen servis ornekleri: ${lineSummaries.slice(0, 4).join(", ")}.`
       : "Dinleyen port bilgisi okunamadi veya yetki kisiti nedeniyle sinirli kaldi.",
-    confidence: listeningLines.length ? 0.81 : 0.43,
+    confidence: lineSummaries.length ? 0.81 : 0.43,
     metadata: {
+      osFamily: getCurrentOsFamily(),
       listeningServices,
       ports,
       reviewPorts,

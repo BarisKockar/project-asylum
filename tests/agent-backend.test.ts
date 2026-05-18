@@ -9,7 +9,8 @@ import {
   resetExecutionStoreForTests
 } from "../src/lib/agent/execution-store";
 import {
-  collectExecutionObservations
+  collectExecutionObservations,
+  parseNetstatListening
 } from "../src/lib/agent/observation-engine";
 import { detectPlatformProfile } from "../src/lib/agent/platform-profile";
 import {
@@ -864,6 +865,39 @@ test("risk engine escalates admin panel severity using security knowledge ports"
       process.env.PROJECT_ASYLUM_SECURITY_PROFILE = previous;
     }
   }
+});
+
+test("Windows netstat parser extracts listening services with port and pid", () => {
+  // Synthetic netstat -ano output mirroring an English Windows locale.
+  // Includes header lines, IPv6 brackets, an ESTABLISHED entry that must
+  // be filtered out, and the trailing PID column.
+  const synthetic = [
+    "Active Connections",
+    "",
+    "  Proto  Local Address          Foreign Address        State           PID",
+    "  TCP    0.0.0.0:135            0.0.0.0:0              LISTENING       848",
+    "  TCP    0.0.0.0:445            0.0.0.0:0              LISTENING       4",
+    "  TCP    127.0.0.1:8080         0.0.0.0:0              LISTENING       5612",
+    "  TCP    192.168.1.5:50001      52.114.6.46:443        ESTABLISHED     7820",
+    "  TCP    [::]:445               [::]:0                 LISTENING       4",
+    "  TCPv6  [::]:3389              [::]:0                 LISTENING       1432"
+  ].join("\r\n");
+
+  const services = parseNetstatListening(synthetic);
+
+  // ESTABLISHED row dropped; 5 LISTENING rows survive.
+  assert.equal(services.length, 5);
+  assert.deepEqual(
+    services.map((service) => service.port),
+    [135, 445, 8080, 445, 3389]
+  );
+  assert.deepEqual(
+    services.map((service) => service.pid),
+    [848, 4, 5612, 4, 1432]
+  );
+  assert.equal(services[0].protocol, "tcp");
+  assert.equal(services[4].protocol, "tcp6");
+  assert.ok(services.every((service) => service.process === "unknown"));
 });
 
 test("policy insight explanation exposes matched and pending rules", () => {
