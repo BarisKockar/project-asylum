@@ -641,6 +641,22 @@ Bu yüzey henüz tam ürün UI’ı değil; amaç ilk kurulum ve ilk demo anınd
 - Retry örneği:
   - aynı prompt ikinci kez çalışınca step `attempt` değeri artıyor
 
+## Architectural Notes
+
+### Agent vs Cognitive Tracks (2026-05-18 itibarıyla netleştirildi)
+
+Repoda iki paralel ajan implementasyonu bulunuyor:
+
+- **`src/lib/agent/`** — **canonical track**. Tüm dokümantasyon (README, PROJECT_BLUEPRINT, COGNITIVE_ARCHITECTURE, TRUST_AND_AUTONOMY_MODEL) bu omurgayı anlatır. Persistence: JSON (`data/agent-executions.json`). Test coverage: `tests/agent-backend.test.ts`. Customer-mode installer ve dashboard bu track üzerinden çalışır.
+- **`src/lib/cognitive/`** + `src/lib/{collectors,domain,orchestrator,pipeline,storage}/` — **deneysel paralel track**. SQLite persistence (`data/project-asylum.db`, 5 migration). Canlı API route'ları: `/api/system`, `/api/runs`, `/api/cycle/local`, `/api/cognitive`. CLI scripts: `run-local-collector`, `run-local-cycle`, `run-reasoning`.
+
+Karar: cognitive track şimdilik silinmiyor çünkü SQLite ve mission-control altyapısı ileride agent track'inin JSON store'unu değiştirmek için temel olabilir. Ancak yeni özellikler **canonical agent track üzerine** yazılmalıdır. Cognitive track'i çağıran API route'lar deneysel sayılır.
+
+### Silinen orphan dosyalar (2026-05-18)
+
+- `src/app/page.full.tsx` — kimse import etmiyordu, Next.js routing yapmıyordu
+- `src/app/globals.full.css` — orphan
+
 ## Known Issues
 
 - Next dev/build ortamı zaman zaman kararsız olabiliyor.

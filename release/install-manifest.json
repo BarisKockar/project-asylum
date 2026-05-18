@@ -3,7 +3,7 @@
   "installMode": "observe-only",
   "safeByDefault": true,
   "remediationEnabled": false,
-  "createdAt": "2026-04-24T08:39:35.950Z",
+  "createdAt": "2026-05-18T11:44:47.568Z",
   "root": "/Users/bariskockar/Desktop/bilet-app/project asylum",
   "dataDir": "/Users/bariskockar/Desktop/bilet-app/project asylum/data",
   "envExamplePath": "/Users/bariskockar/Desktop/bilet-app/project asylum/.env.example",
