@@ -94,7 +94,7 @@ export function runPromptExecution(
     policyRiskContext,
     policyContext
   );
-  const plan = buildExecutionPlan(analysis, reasoning, critic);
+  const plan = buildExecutionPlan(analysis, reasoning, critic, risks);
   const taskRuns = runExecutionTasks(
     analysis,
     plan.steps,

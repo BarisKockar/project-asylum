@@ -130,6 +130,23 @@ export function runExecutionTasks(
       };
     }
 
+    // Approval steps never auto-execute — they encode a hard human gate.
+    // Persisting status="awaiting-approval" lets the dashboard surface
+    // it as an actionable item rather than rolling forward.
+    if (step.taskType === "approval") {
+      return {
+        stepId: step.id,
+        taskType: step.taskType,
+        commandHint: step.commandHint,
+        status: "awaiting-approval",
+        attempt,
+        summary:
+          "Insan onayi bekleniyor; otomatik calistirilmadi (mode=remediate).",
+        produced: [],
+        executedAt
+      };
+    }
+
     const rerunRisks = scoreExecutionRisks(analysis, observations);
     const rerunCritic = rerunCriticTrace(
       analysis,

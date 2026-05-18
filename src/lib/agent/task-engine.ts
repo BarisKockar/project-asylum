@@ -2,6 +2,7 @@ import type { PromptAnalysis, PromptExecutionReport } from "../../types/agent";
 
 type ReasoningTrace = PromptExecutionReport["reasoning"];
 type CriticTrace = PromptExecutionReport["critic"];
+type ExecutionRisk = PromptExecutionReport["risks"][number];
 type PlanStep = PromptExecutionReport["plan"]["steps"][number];
 
 function stepForEvidence(
@@ -66,14 +67,84 @@ function stepForPolicyGate(critic: CriticTrace): PlanStep {
   };
 }
 
+function stepForDeepValidation(
+  critic: CriticTrace,
+  risks: ExecutionRisk[]
+): PlanStep {
+  const reasons: string[] = [];
+
+  if (critic.riskFlags.includes("evidence-coherence-review")) {
+    reasons.push("kanit zincirinde tutarsizlik var");
+  }
+
+  if (
+    critic.riskFlags.includes("critical-surface-review") ||
+    risks.some((risk) => risk.severity === "critical")
+  ) {
+    reasons.push("kritik seviye risk yuzeyi tespit edildi");
+  }
+
+  if (reasons.length === 0) {
+    reasons.push("kanit butunlugu icin ikincil dogrulama gerekiyor");
+  }
+
+  return {
+    id: "step-deep-validation",
+    title: "İkincil kanıt doğrulaması yap",
+    status: "ready",
+    rationale: `Policy gate öncesi ek inceleme: ${reasons.join(" ve ")}.`,
+    taskType: "review",
+    commandHint: "deep-validation",
+    outputs: ["evidence-cross-check", "contradiction-resolution"]
+  };
+}
+
+function stepForApprovalRequest(analysis: PromptAnalysis): PlanStep {
+  return {
+    id: "step-approval-request",
+    title: "İnsan onayı bekle",
+    status: "awaiting-approval",
+    rationale:
+      "Remediation modu otomatik aksiyon almadan once insan onayini zorunlu kilar.",
+    taskType: "approval",
+    commandHint: "human-approval-request",
+    outputs: [
+      "approval-decision",
+      `approval-target:${analysis.detectedTargets[0] ?? "general-security-surface"}`
+    ]
+  };
+}
+
 export function buildExecutionTasks(
   analysis: PromptAnalysis,
   reasoning: ReasoningTrace,
-  critic: CriticTrace
+  critic: CriticTrace,
+  risks: ExecutionRisk[] = []
 ): PlanStep[] {
-  return [
+  const steps: PlanStep[] = [
     stepForEvidence(analysis, reasoning),
-    stepForReasoningRefresh(),
-    stepForPolicyGate(critic)
+    stepForReasoningRefresh()
   ];
+
+  // Deep validation lands between the reasoning refresh and the policy
+  // gate so the gate sees the strongest possible evidence picture.
+  const needsDeepValidation =
+    critic.riskFlags.includes("evidence-coherence-review") ||
+    critic.riskFlags.includes("critical-surface-review") ||
+    risks.some((risk) => risk.severity === "critical");
+
+  if (needsDeepValidation) {
+    steps.push(stepForDeepValidation(critic, risks));
+  }
+
+  steps.push(stepForPolicyGate(critic));
+
+  // Approval is mandatory for remediate mode — even if confidence is
+  // high enough for low-risk-auto, remediation requires explicit human
+  // sign-off. The step itself surfaces this requirement to operators.
+  if (analysis.suggestedMode === "remediate") {
+    steps.push(stepForApprovalRequest(analysis));
+  }
+
+  return steps;
 }

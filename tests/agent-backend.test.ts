@@ -40,6 +40,7 @@ import {
   getActiveAgentThresholdProfile,
   getActiveAgentThresholdProfileName
 } from "../src/lib/agent/threshold-config";
+import { buildExecutionPlan } from "../src/lib/agent/planning-engine";
 import type { PromptAnalysis, PromptExecutionReport } from "../src/types/agent";
 
 function createAnalysis(
@@ -1057,6 +1058,111 @@ test("strict-soc integrity threshold demotes evidence-score below custom cutoff"
       process.env.PROJECT_ASYLUM_THRESHOLD_PROFILE = previous;
     }
   }
+});
+
+test("planning-engine inserts a deep-validation step when critic flags coherence review", () => {
+  const analysis = createAnalysis({
+    detectedTargets: ["localhost", "configuration"]
+  });
+  const reasoning: PromptExecutionReport["reasoning"] = {
+    belief: {
+      summary: "",
+      status: "tentative",
+      confidence: 0.7,
+      supportingKinds: []
+    },
+    hypotheses: [
+      {
+        id: "hyp-1",
+        title: "Config drift",
+        status: "candidate",
+        confidence: 0.6,
+        rationale: "",
+        evidence: []
+      }
+    ],
+    priorityHypothesisId: "hyp-1",
+    nextInference: ""
+  };
+  const critic: PromptExecutionReport["critic"] = {
+    verdict: "revise",
+    summary: "",
+    riskFlags: ["evidence-coherence-review", "network-exposure-review"],
+    recommendedAction: ""
+  };
+  const risks: PromptExecutionReport["risks"] = [];
+
+  const plan = buildExecutionPlan(analysis, reasoning, critic, risks);
+
+  const stepIds = plan.steps.map((step) => step.id);
+  assert.ok(stepIds.includes("step-deep-validation"));
+  // Deep validation must land before the policy gate so the gate can
+  // weigh fresh evidence.
+  assert.ok(
+    stepIds.indexOf("step-deep-validation") < stepIds.indexOf("step-policy-gate")
+  );
+  const validation = plan.steps.find((step) => step.id === "step-deep-validation");
+  assert.equal(validation?.taskType, "review");
+  assert.match(validation?.rationale ?? "", /tutarsizlik/i);
+});
+
+test("planning-engine appends approval step for remediate mode", () => {
+  const analysis = createAnalysis({
+    suggestedMode: "remediate",
+    detectedTargets: ["network-surface"]
+  });
+  const reasoning: PromptExecutionReport["reasoning"] = {
+    belief: {
+      summary: "",
+      status: "tentative",
+      confidence: 0.7,
+      supportingKinds: []
+    },
+    hypotheses: [],
+    priorityHypothesisId: null,
+    nextInference: ""
+  };
+  const critic: PromptExecutionReport["critic"] = {
+    verdict: "approve",
+    summary: "",
+    riskFlags: [],
+    recommendedAction: ""
+  };
+
+  const plan = buildExecutionPlan(analysis, reasoning, critic, []);
+  const lastStep = plan.steps[plan.steps.length - 1];
+
+  assert.equal(lastStep.id, "step-approval-request");
+  assert.equal(lastStep.taskType, "approval");
+  assert.equal(lastStep.status, "awaiting-approval");
+});
+
+test("planning-engine keeps the original three-step plan for clean discovery", () => {
+  const analysis = createAnalysis();
+  const reasoning: PromptExecutionReport["reasoning"] = {
+    belief: {
+      summary: "",
+      status: "tentative",
+      confidence: 0.7,
+      supportingKinds: []
+    },
+    hypotheses: [],
+    priorityHypothesisId: null,
+    nextInference: ""
+  };
+  const critic: PromptExecutionReport["critic"] = {
+    verdict: "approve",
+    summary: "",
+    riskFlags: [],
+    recommendedAction: ""
+  };
+
+  const plan = buildExecutionPlan(analysis, reasoning, critic, []);
+
+  assert.deepEqual(
+    plan.steps.map((step) => step.id),
+    ["step-collect-evidence", "step-reasoning-refresh", "step-policy-gate"]
+  );
 });
 
 test("Windows netstat parser extracts listening services with port and pid", () => {

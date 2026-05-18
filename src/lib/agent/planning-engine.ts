@@ -3,12 +3,14 @@ import { buildExecutionTasks } from "./task-engine";
 
 type ReasoningTrace = PromptExecutionReport["reasoning"];
 type CriticTrace = PromptExecutionReport["critic"];
+type ExecutionRisk = PromptExecutionReport["risks"][number];
 type ExecutionPlan = PromptExecutionReport["plan"];
 
 export function buildExecutionPlan(
   analysis: PromptAnalysis,
   reasoning: ReasoningTrace,
-  critic: CriticTrace
+  critic: CriticTrace,
+  risks: ExecutionRisk[] = []
 ): ExecutionPlan {
   const guarded =
     analysis.constraints.includes("safe-first") || critic.riskFlags.length > 0;
@@ -18,10 +20,11 @@ export function buildExecutionPlan(
       (hypothesis) => hypothesis.id === reasoning.priorityHypothesisId
     ) ?? reasoning.hypotheses[0];
 
-  const steps = buildExecutionTasks(analysis, reasoning, critic).map((step) =>
-    step.id === "step-policy-gate" && guarded
-      ? { ...step, status: "blocked" }
-      : step
+  const steps = buildExecutionTasks(analysis, reasoning, critic, risks).map(
+    (step) =>
+      step.id === "step-policy-gate" && guarded
+        ? { ...step, status: "blocked" }
+        : step
   );
 
   return {
