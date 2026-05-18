@@ -1,4 +1,5 @@
 import type { PersistentTrustRecord, PromptExecutionReport } from "../../types/agent";
+import { getActiveAgentThresholdProfile } from "./threshold-config";
 
 type ExecutionAnalysis = PromptExecutionReport["execution"];
 type ExecutionDecision = PromptExecutionReport["decision"];
@@ -200,6 +201,9 @@ export function buildTrustAssessment(input: {
       coherencePenalty
   );
 
+  const thresholds = getActiveAgentThresholdProfile().trust;
+  const contradictionCount = input.integrity?.contradictionCount ?? 0;
+
   let automationEligibility: TrustAssessment["automationEligibility"] =
     "observe-only";
   let approvalRequirementReason = "Confidence henüz otomatik aksiyon için yeterli değil.";
@@ -208,30 +212,35 @@ export function buildTrustAssessment(input: {
     automationEligibility = "approval-required";
     approvalRequirementReason =
       "Onarım modu policy gereği insan onayı olmadan otomatik uygulanamaz.";
-  } else if ((input.integrity?.contradictionCount ?? 0) >= 2) {
+  } else if (contradictionCount >= thresholds.contradictionForceObserveOnly) {
     automationEligibility = "observe-only";
     approvalRequirementReason =
-      "Kanıt zincirinde birden fazla tutarsızlık var; sistem gözlem modunda kalmalı.";
+      thresholds.contradictionForceObserveOnly === 1
+        ? "Kanıt zincirinde tutarsızlık var; sistem gözlem modunda kalmalı."
+        : "Kanıt zincirinde birden fazla tutarsızlık var; sistem gözlem modunda kalmalı.";
   } else if (input.integrity?.status === "thin") {
     automationEligibility = "observe-only";
     approvalRequirementReason =
       "Kanıt bütünlüğü zayıf; confidence yükselse bile otomasyon eligibility observe-only kalır.";
-  } else if ((input.integrity?.contradictionCount ?? 0) === 1) {
+  } else if (contradictionCount >= thresholds.contradictionForceApproval) {
     automationEligibility = "approval-required";
     approvalRequirementReason =
       "Kanıt zincirinde tekil bir tutarsızlık var; insan onayı olmadan otomatik aksiyon önerilmez.";
   } else if (
     input.integrity?.status === "partial" &&
-    confidenceScore >= 0.6
+    confidenceScore >= thresholds.approvalRequiredConfidence
   ) {
     automationEligibility = "approval-required";
     approvalRequirementReason =
       "Confidence yeterli görünse de kanıt bütünlüğü kısmi; insan onayı olmadan otomatik aksiyon önerilmez.";
-  } else if (confidenceScore >= 0.85 && input.decision.blockers.length === 0) {
+  } else if (
+    confidenceScore >= thresholds.lowRiskAutoConfidence &&
+    input.decision.blockers.length === 0
+  ) {
     automationEligibility = "low-risk-auto";
     approvalRequirementReason =
       "Confidence yüksek ve aktif blocker görünmüyor; yalnızca düşük riskli aksiyonlar için aday.";
-  } else if (confidenceScore >= 0.6) {
+  } else if (confidenceScore >= thresholds.approvalRequiredConfidence) {
     automationEligibility = "approval-required";
     approvalRequirementReason =
       "Confidence orta seviyede; öneri üretilebilir ama otomatik uygulama için insan onayı gerekli.";

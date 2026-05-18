@@ -1,4 +1,5 @@
 import type { PromptAnalysis, PromptExecutionReport } from "../../types/agent";
+import { getActiveAgentThresholdProfile } from "./threshold-config";
 
 type ExecutionObservation = PromptExecutionReport["observations"][number];
 type ExecutionTaskRun = PromptExecutionReport["taskRuns"][number];
@@ -187,18 +188,22 @@ export function buildExecutionIntegrity(input: {
       blockerPenalty
   );
 
+  const thresholds = getActiveAgentThresholdProfile().integrity;
   const status =
-    evidenceScore >= 0.78 && missingKinds.length === 0 && contradictionCount === 0
+    evidenceScore >= thresholds.strongEvidenceScore &&
+    missingKinds.length === 0 &&
+    contradictionCount === 0
       ? "strong"
-      : evidenceScore >= 0.55 && contradictionCount < 3
+      : evidenceScore >= thresholds.partialEvidenceScore &&
+          contradictionCount < thresholds.partialMaxContradictions
         ? "partial"
         : "thin";
   const pilotReady =
-    evidenceScore >= 0.72 &&
-    coverageScore >= 0.8 &&
-    taskCompletionScore >= 0.66 &&
+    evidenceScore >= thresholds.pilotReadyEvidenceScore &&
+    coverageScore >= thresholds.pilotReadyCoverageScore &&
+    taskCompletionScore >= thresholds.pilotReadyTaskCompletion &&
     contradictionCount === 0 &&
-    coherenceScore >= 0.8;
+    coherenceScore >= thresholds.pilotReadyCoherenceScore;
   const contradictionSummary =
     contradictionCount > 0
       ? ` Tutarsizliklar: ${contradictions.join(", ")}.`

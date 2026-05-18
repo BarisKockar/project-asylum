@@ -1,0 +1,56 @@
+{
+  "activeProfile": "default",
+  "profiles": {
+    "default": {
+      "trust": {
+        "lowRiskAutoConfidence": 0.85,
+        "approvalRequiredConfidence": 0.6,
+        "contradictionForceObserveOnly": 2,
+        "contradictionForceApproval": 1
+      },
+      "integrity": {
+        "strongEvidenceScore": 0.78,
+        "partialEvidenceScore": 0.55,
+        "partialMaxContradictions": 3,
+        "pilotReadyEvidenceScore": 0.72,
+        "pilotReadyCoverageScore": 0.8,
+        "pilotReadyTaskCompletion": 0.66,
+        "pilotReadyCoherenceScore": 0.8
+      }
+    },
+    "strict-soc": {
+      "trust": {
+        "lowRiskAutoConfidence": 0.92,
+        "approvalRequiredConfidence": 0.7,
+        "contradictionForceObserveOnly": 1,
+        "contradictionForceApproval": 1
+      },
+      "integrity": {
+        "strongEvidenceScore": 0.85,
+        "partialEvidenceScore": 0.65,
+        "partialMaxContradictions": 2,
+        "pilotReadyEvidenceScore": 0.8,
+        "pilotReadyCoverageScore": 0.9,
+        "pilotReadyTaskCompletion": 0.8,
+        "pilotReadyCoherenceScore": 0.9
+      }
+    },
+    "lenient-lab": {
+      "trust": {
+        "lowRiskAutoConfidence": 0.75,
+        "approvalRequiredConfidence": 0.5,
+        "contradictionForceObserveOnly": 3,
+        "contradictionForceApproval": 2
+      },
+      "integrity": {
+        "strongEvidenceScore": 0.65,
+        "partialEvidenceScore": 0.4,
+        "partialMaxContradictions": 4,
+        "pilotReadyEvidenceScore": 0.55,
+        "pilotReadyCoverageScore": 0.6,
+        "pilotReadyTaskCompletion": 0.5,
+        "pilotReadyCoherenceScore": 0.65
+      }
+    }
+  }
+}
