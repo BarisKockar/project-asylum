@@ -31,7 +31,7 @@ export function getMissionControlState() {
 }
 
 export function queueLocalRun(target: string): PipelineRun {
-  const run = {
+  const run: PipelineRun = {
     id: `run-${target.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-001`,
     target,
     status: "queued",
