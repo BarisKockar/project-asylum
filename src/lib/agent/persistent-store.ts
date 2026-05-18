@@ -2,6 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 
 import type {
+  ApprovalRecord,
+  ApprovalStatus,
+  DryRunActionClass,
+  DryRunBlastRadius,
   PersistentTrustRecord,
   PromptExecution,
   PromptExecutionReport
@@ -11,6 +15,7 @@ type PersistentExecutionStore = {
   executions: PromptExecution[];
   reports: Record<string, PromptExecutionReport>;
   trustRecords: Record<string, PersistentTrustRecord>;
+  approvals: Record<string, ApprovalRecord>;
 };
 
 const STORE_DIR = path.join(process.cwd(), "data");
@@ -20,7 +25,65 @@ function emptyStore(): PersistentExecutionStore {
   return {
     executions: [],
     reports: {},
-    trustRecords: {}
+    trustRecords: {},
+    approvals: {}
+  };
+}
+
+const APPROVAL_STATUSES: ApprovalStatus[] = [
+  "awaiting-approval",
+  "approved",
+  "rejected",
+  "expired"
+];
+
+const APPROVAL_ACTION_CLASSES: DryRunActionClass[] = [
+  "network-isolation",
+  "config-hardening",
+  "service-restart",
+  "access-rotation",
+  "logging-enable",
+  "no-op"
+];
+
+const APPROVAL_BLAST_RADIUS: DryRunBlastRadius[] = ["narrow", "moderate", "wide"];
+
+function pickEnum<T extends string>(
+  value: unknown,
+  allowed: readonly T[],
+  fallback: T
+): T {
+  return typeof value === "string" && (allowed as readonly string[]).includes(value)
+    ? (value as T)
+    : fallback;
+}
+
+function normalizeApprovalRecord(record: ApprovalRecord): ApprovalRecord {
+  return {
+    id: typeof record.id === "string" ? record.id : "",
+    executionId:
+      typeof record.executionId === "string" ? record.executionId : "",
+    dryRunActionId:
+      typeof record.dryRunActionId === "string" ? record.dryRunActionId : "",
+    actionClass: pickEnum(record.actionClass, APPROVAL_ACTION_CLASSES, "no-op"),
+    target: typeof record.target === "string" ? record.target : "",
+    intent: typeof record.intent === "string" ? record.intent : "",
+    blastRadius: pickEnum(record.blastRadius, APPROVAL_BLAST_RADIUS, "narrow"),
+    reversible:
+      typeof record.reversible === "boolean" ? record.reversible : true,
+    status: pickEnum(record.status, APPROVAL_STATUSES, "awaiting-approval"),
+    proposedAt:
+      typeof record.proposedAt === "string" ? record.proposedAt : new Date(0).toISOString(),
+    decidedAt:
+      typeof record.decidedAt === "string" ? record.decidedAt : null,
+    decidedBy: typeof record.decidedBy === "string" ? record.decidedBy : null,
+    decisionRationale:
+      typeof record.decisionRationale === "string"
+        ? record.decisionRationale
+        : null,
+    expiresAt:
+      typeof record.expiresAt === "string" ? record.expiresAt : new Date().toISOString(),
+    matchKey: typeof record.matchKey === "string" ? record.matchKey : ""
   };
 }
 
@@ -116,6 +179,10 @@ export function loadPersistentExecutionStore(): PersistentExecutionStore {
       parsed.trustRecords && typeof parsed.trustRecords === "object"
         ? parsed.trustRecords
         : {};
+    const approvals =
+      parsed.approvals && typeof parsed.approvals === "object"
+        ? parsed.approvals
+        : {};
 
     return {
       executions: Array.isArray(parsed.executions)
@@ -133,6 +200,12 @@ export function loadPersistentExecutionStore(): PersistentExecutionStore {
         Object.entries(trustRecords).map(([key, value]) => [
           key,
           normalizeTrustRecord(value as PersistentTrustRecord)
+        ])
+      ),
+      approvals: Object.fromEntries(
+        Object.entries(approvals).map(([key, value]) => [
+          key,
+          normalizeApprovalRecord(value as ApprovalRecord)
         ])
       )
     };

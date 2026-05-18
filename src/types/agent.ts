@@ -201,7 +201,9 @@ export type DryRunActionClass =
 export type DryRunActionStatus =
   | "blocked"
   | "awaiting-approval"
-  | "auto-eligible";
+  | "auto-eligible"
+  | "approved"
+  | "rejected";
 
 export type DryRunBlastRadius = "narrow" | "moderate" | "wide";
 
@@ -216,6 +218,32 @@ export type DryRunAction = {
   evidenceRequired: string[];
   status: DryRunActionStatus;
   blockedReason: string | null;
+  approvalId?: string;
+  approvalStatus?: ApprovalStatus;
+};
+
+export type ApprovalStatus =
+  | "awaiting-approval"
+  | "approved"
+  | "rejected"
+  | "expired";
+
+export type ApprovalRecord = {
+  id: string;
+  executionId: string;
+  dryRunActionId: string;
+  actionClass: DryRunActionClass;
+  target: string;
+  intent: string;
+  blastRadius: DryRunBlastRadius;
+  reversible: boolean;
+  status: ApprovalStatus;
+  proposedAt: string;
+  decidedAt: string | null;
+  decidedBy: string | null;
+  decisionRationale: string | null;
+  expiresAt: string;
+  matchKey: string;
 };
 
 export type DryRunReport = {

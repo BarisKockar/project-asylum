@@ -20,6 +20,7 @@ import { runExecutionTasks } from "./task-runner";
 import { buildTrustAssessment, updateTrustTrendRecords } from "./trust-engine";
 import { buildExecutionIntegrity } from "./integrity-engine";
 import { deriveDryRunReport } from "./dry-run-engine";
+import { recordPendingApprovals } from "./approval-engine";
 
 function createExecution(analysis: PromptAnalysis): PromptExecution {
   const createdAt = new Date().toISOString();
@@ -144,6 +145,7 @@ export function runPromptExecution(
     trust,
     integrity
   });
+  recordPendingApprovals(execution.id, dryRun.actions);
   const summary =
     decision.blockers.length > 0
       ? `[${execution.policyProfile}] ${observations.length} observation, ${risks.length} risk, ${reasoning.hypotheses.length} hipotez ve ${plan.steps.length} plan adımı üretildi; aktif blocker'lar: ${decision.blockers.join(", ")}.`

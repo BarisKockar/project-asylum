@@ -1,4 +1,5 @@
 import type {
+  ApprovalRecord,
   PersistentTrustRecord,
   PromptExecution,
   PromptExecutionReport
@@ -12,6 +13,7 @@ type ExecutionStore = {
   executions: PromptExecution[];
   reports: Record<string, PromptExecutionReport>;
   trustRecords: Record<string, PersistentTrustRecord>;
+  approvals: Record<string, ApprovalRecord>;
 };
 
 declare global {
@@ -230,7 +232,8 @@ function createBootstrapStore(): ExecutionStore {
         generatedAt: bootstrapExecution.createdAt
       }
     },
-    trustRecords: {}
+    trustRecords: {},
+    approvals: {}
   };
 }
 
@@ -238,7 +241,15 @@ export function getExecutionStore(): ExecutionStore {
   if (!globalThis.__projectAsylumExecutionStore__) {
     const persisted = loadPersistentExecutionStore();
     globalThis.__projectAsylumExecutionStore__ =
-      persisted.executions.length > 0 ? persisted : createBootstrapStore();
+      persisted.executions.length > 0
+        ? { ...persisted, approvals: persisted.approvals ?? {} }
+        : createBootstrapStore();
+  }
+
+  // Older persisted stores (pre-approval-engine) may have missed the
+  // approvals field; backfill on access so consumers never see undefined.
+  if (!globalThis.__projectAsylumExecutionStore__.approvals) {
+    globalThis.__projectAsylumExecutionStore__.approvals = {};
   }
 
   return globalThis.__projectAsylumExecutionStore__;
@@ -249,8 +260,34 @@ export function persistExecutionStore(): void {
   savePersistentExecutionStore({
     executions: store.executions,
     reports: store.reports,
-    trustRecords: store.trustRecords
+    trustRecords: store.trustRecords,
+    approvals: store.approvals
   });
+}
+
+export function listApprovalRecords(filters?: {
+  status?: string;
+  executionId?: string;
+}) {
+  const records = Object.values(getExecutionStore().approvals);
+
+  return records
+    .filter((record) => {
+      if (
+        filters?.status &&
+        filters.status !== "all" &&
+        record.status !== filters.status
+      ) {
+        return false;
+      }
+
+      if (filters?.executionId && record.executionId !== filters.executionId) {
+        return false;
+      }
+
+      return true;
+    })
+    .sort((left, right) => right.proposedAt.localeCompare(left.proposedAt));
 }
 
 export function resetExecutionStoreForTests(): void {

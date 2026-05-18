@@ -42,6 +42,13 @@ import {
 } from "../src/lib/agent/threshold-config";
 import { buildExecutionPlan } from "../src/lib/agent/planning-engine";
 import { deriveDryRunReport } from "../src/lib/agent/dry-run-engine";
+import {
+  approveAction,
+  expirePendingApprovals,
+  findLiveApprovalFor,
+  listApprovals,
+  rejectAction
+} from "../src/lib/agent/approval-engine";
 import type { PromptAnalysis, PromptExecutionReport } from "../src/types/agent";
 
 function createAnalysis(
@@ -1059,6 +1066,204 @@ test("strict-soc integrity threshold demotes evidence-score below custom cutoff"
       process.env.PROJECT_ASYLUM_THRESHOLD_PROFILE = previous;
     }
   }
+});
+
+test("approval engine: executePrompt persists pending approvals for awaiting actions", () => {
+  resetExecutionStoreForTests();
+
+  // Pre-conditions: drain any approvals carried from earlier tests in the
+  // same suite (resetExecutionStoreForTests reseeds executions but
+  // approvals on the shared module-scoped store can persist across runs
+  // if a previous test populated them).
+  for (const record of listApprovals()) {
+    if (record.status === "awaiting-approval") {
+      rejectAction(record.id, {
+        decidedBy: "test-cleanup",
+        rationale: "cleanup between tests"
+      });
+    }
+  }
+
+  const result = executePrompt(
+    "localhost admin panelini analiz et ve açık port risklerini açıkla"
+  );
+  const report = getPromptExecutionReport(result.execution.id);
+  assert.ok(report?.dryRun);
+
+  const awaiting = report?.dryRun?.actions.filter(
+    (action) => action.status === "awaiting-approval"
+  ) ?? [];
+
+  const persistedAwaiting = listApprovals({
+    status: "awaiting-approval",
+    executionId: result.execution.id
+  });
+
+  // Each awaiting-approval action gets exactly one approval record.
+  assert.equal(persistedAwaiting.length, awaiting.length);
+
+  // Bookkeeping fields are populated.
+  for (const record of persistedAwaiting) {
+    assert.ok(record.id.startsWith("apr-"));
+    assert.equal(record.executionId, result.execution.id);
+    assert.equal(record.status, "awaiting-approval");
+    assert.ok(record.expiresAt > record.proposedAt);
+    assert.ok(record.matchKey.includes("::"));
+    assert.equal(record.decidedAt, null);
+  }
+});
+
+test("approval engine: approve/reject transitions block re-decision and surface decidedBy", () => {
+  resetExecutionStoreForTests();
+  // Drain any leftover awaiting approvals from earlier tests.
+  for (const record of listApprovals()) {
+    if (record.status === "awaiting-approval") {
+      rejectAction(record.id, {
+        decidedBy: "test-cleanup",
+        rationale: "cleanup"
+      });
+    }
+  }
+
+  const result = executePrompt(
+    "localhost admin panelini analiz et ve açık port risklerini açıkla"
+  );
+  const pending = listApprovals({
+    status: "awaiting-approval",
+    executionId: result.execution.id
+  });
+
+  if (pending.length === 0) {
+    // No awaiting approvals produced (trust may have flipped to
+    // observe-only on this host) — exit early; this test only validates
+    // state transitions when a pending record exists.
+    return;
+  }
+
+  const target = pending[0];
+
+  const approved = approveAction(target.id, {
+    decidedBy: "operator-alice",
+    rationale: "Risk yüzeyi doğrulandı; aksiyon onaylandı."
+  });
+
+  assert.equal(approved.status, "approved");
+  assert.equal(approved.decidedBy, "operator-alice");
+  assert.match(approved.decisionRationale ?? "", /onaylandı/i);
+  assert.ok(approved.decidedAt);
+
+  // Second decision must throw — approvals are single-shot.
+  assert.throws(
+    () =>
+      approveAction(target.id, {
+        decidedBy: "operator-bob",
+        rationale: "double decision"
+      }),
+    /already decided/i
+  );
+
+  // Reject path on a separate record.
+  if (pending.length < 2) {
+    return;
+  }
+
+  const rejected = rejectAction(pending[1].id, {
+    decidedBy: "operator-alice",
+    rationale: "Blast radius beklenenden geniş."
+  });
+
+  assert.equal(rejected.status, "rejected");
+  assert.equal(rejected.decidedBy, "operator-alice");
+});
+
+test("approval engine: re-running same prompt honors prior approval/rejection", () => {
+  resetExecutionStoreForTests();
+  for (const record of listApprovals()) {
+    if (record.status === "awaiting-approval") {
+      rejectAction(record.id, {
+        decidedBy: "test-cleanup",
+        rationale: "cleanup"
+      });
+    }
+  }
+
+  const first = executePrompt(
+    "localhost admin panelini analiz et ve açık port risklerini açıkla"
+  );
+  const pending = listApprovals({
+    status: "awaiting-approval",
+    executionId: first.execution.id
+  });
+
+  if (pending.length === 0) {
+    return;
+  }
+
+  // Reject the first pending approval.
+  rejectAction(pending[0].id, {
+    decidedBy: "operator-alice",
+    rationale: "Bu ortamda admin portu kapatilmamali."
+  });
+
+  // Re-run the same prompt; the dry-run engine should pick up the prior
+  // rejection for the matching (actionClass, target) pair.
+  const second = executePrompt(
+    "localhost admin panelini analiz et ve açık port risklerini açıkla"
+  );
+  const secondReport = getPromptExecutionReport(second.execution.id);
+  const rejectedActions = secondReport?.dryRun?.actions.filter(
+    (action) => action.status === "rejected"
+  ) ?? [];
+
+  // At least one action came back rejected (matching the prior decision).
+  assert.ok(rejectedActions.length >= 1);
+  assert.ok(
+    rejectedActions.some((action) => action.approvalId === pending[0].id)
+  );
+  assert.match(
+    rejectedActions[0].blockedReason ?? "",
+    /kapatilmamali|reddetti/i
+  );
+});
+
+test("approval engine: expirePendingApprovals sweeps records past their TTL", () => {
+  resetExecutionStoreForTests();
+  for (const record of listApprovals()) {
+    if (record.status === "awaiting-approval") {
+      rejectAction(record.id, {
+        decidedBy: "test-cleanup",
+        rationale: "cleanup"
+      });
+    }
+  }
+
+  const result = executePrompt(
+    "localhost admin panelini analiz et ve açık port risklerini açıkla"
+  );
+  const pending = listApprovals({
+    status: "awaiting-approval",
+    executionId: result.execution.id
+  });
+
+  if (pending.length === 0) {
+    return;
+  }
+
+  // Sweep with a future timestamp far beyond the TTL window so every
+  // pending record expires.
+  const futureMs = Date.now() + 1000 * 60 * 60 * 48; // 48 hours forward
+  const expiredCount = expirePendingApprovals(futureMs);
+
+  assert.ok(expiredCount >= pending.length);
+
+  for (const record of pending) {
+    const fresh = listApprovals().find((entry) => entry.id === record.id);
+    assert.equal(fresh?.status, "expired");
+  }
+
+  // After expiry, findLiveApprovalFor must NOT return the expired record.
+  const live = findLiveApprovalFor(pending[0].actionClass, pending[0].target);
+  assert.equal(live, null);
 });
 
 test("dry-run engine maps risks to candidate actions with trust-aware status", () => {

@@ -1,4 +1,5 @@
 import type {
+  ApprovalRecord,
   DryRunAction,
   DryRunActionClass,
   DryRunActionStatus,
@@ -7,6 +8,7 @@ import type {
   PromptAnalysis,
   PromptExecutionReport
 } from "../../types/agent";
+import { findLiveApprovalFor } from "./approval-engine";
 
 type ExecutionRisk = PromptExecutionReport["risks"][number];
 type ExecutionDecision = PromptExecutionReport["decision"];
@@ -230,10 +232,12 @@ function buildSummary(actions: DryRunAction[]): string {
   }
 
   const auto = actions.filter((action) => action.status === "auto-eligible").length;
+  const approved = actions.filter((action) => action.status === "approved").length;
   const approval = actions.filter(
     (action) => action.status === "awaiting-approval"
   ).length;
   const blocked = actions.filter((action) => action.status === "blocked").length;
+  const rejected = actions.filter((action) => action.status === "rejected").length;
 
   const parts: string[] = [];
 
@@ -241,8 +245,16 @@ function buildSummary(actions: DryRunAction[]): string {
     parts.push(`${auto} aksiyon auto-eligible (Phase 2 executor'a hazir)`);
   }
 
+  if (approved > 0) {
+    parts.push(`${approved} aksiyon operator onayli (executor bekliyor)`);
+  }
+
   if (approval > 0) {
     parts.push(`${approval} aksiyon insan onayi bekliyor`);
+  }
+
+  if (rejected > 0) {
+    parts.push(`${rejected} aksiyon operator tarafindan reddedildi`);
   }
 
   if (blocked > 0) {
@@ -259,6 +271,10 @@ export function deriveDryRunReport(input: {
   decision: ExecutionDecision;
   trust: TrustAssessment;
   integrity?: IntegrityReport;
+  approvalLookup?: (
+    actionClass: string,
+    target: string
+  ) => ApprovalRecord | null;
 }): DryRunReport {
   const blockedReason = deriveBlockedReason({
     decision: input.decision,
@@ -267,10 +283,15 @@ export function deriveDryRunReport(input: {
     analysis: input.analysis
   });
 
-  const status = deriveStatusFromContext(blockedReason, {
+  const baseStatus = deriveStatusFromContext(blockedReason, {
     trust: input.trust,
     analysis: input.analysis
   });
+
+  const lookupApproval =
+    input.approvalLookup ??
+    ((actionClass: string, target: string) =>
+      findLiveApprovalFor(actionClass, target));
 
   const actions: DryRunAction[] = [];
 
@@ -281,22 +302,57 @@ export function deriveDryRunReport(input: {
       const action = buildAction(template, { risk, observations: input.observations }, templateIndex);
       templateIndex += 1;
 
+      const existingApproval = lookupApproval(action.class, action.target);
+
+      // Approval override: if the operator has an unexpired decision for
+      // this (actionClass, target), surface that decision instead of the
+      // base trust-derived status. A rejection wins even when trust is
+      // high; an approval still respects hard blockers.
+      let status: DryRunActionStatus = baseStatus;
+      let resolvedBlockedReason = blockedReason;
+      let approvalId: string | undefined;
+      let approvalStatus = existingApproval?.status;
+
+      if (existingApproval) {
+        approvalId = existingApproval.id;
+
+        if (existingApproval.status === "rejected") {
+          status = "rejected";
+          resolvedBlockedReason =
+            existingApproval.decisionRationale ??
+            "Operator daha once bu aksiyonu reddetti.";
+        } else if (existingApproval.status === "approved") {
+          // An approval cannot override a hard block (e.g. observe-only
+          // trust or active contradiction). It only upgrades the status
+          // when the gates are otherwise clear.
+          status = blockedReason ? "blocked" : "approved";
+        } else if (existingApproval.status === "awaiting-approval") {
+          // Re-use the existing record; surface awaiting-approval so the
+          // operator isn't asked to approve the same thing twice.
+          status = blockedReason ? "blocked" : "awaiting-approval";
+        }
+      }
+
       actions.push({
         ...action,
         status,
-        blockedReason
+        blockedReason: status === "blocked" ? resolvedBlockedReason : null,
+        approvalId,
+        approvalStatus
       });
     }
   }
 
   const executableCount = actions.filter(
-    (action) => action.status === "auto-eligible"
+    (action) =>
+      action.status === "auto-eligible" || action.status === "approved"
   ).length;
   const awaitingApprovalCount = actions.filter(
     (action) => action.status === "awaiting-approval"
   ).length;
   const blockedCount = actions.filter(
-    (action) => action.status === "blocked"
+    (action) =>
+      action.status === "blocked" || action.status === "rejected"
   ).length;
 
   return {
