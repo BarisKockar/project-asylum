@@ -1,0 +1,18 @@
+.DS_Store
+*.bak-*
+broken-scripts/
+node_modules/
+.next/
+*.tsbuildinfo
+.env
+
+# Local operational data
+data/agent-executions.json
+data/project-asylum.db
+backups/
+release/bootstrap-profile.json
+release/install-state.json
+release/install-session.log
+release/self-check-report.json
+release/app-launch.json
+release/launcher-session.log

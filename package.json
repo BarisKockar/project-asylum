@@ -1,0 +1,33 @@
+{
+  "name": "project-asylum",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "install:preflight": "node --import tsx scripts/install-preflight.ts",
+    "install:setup": "node --import tsx scripts/setup-install.ts",
+    "install:bootstrap": "node --import tsx scripts/bootstrap-install.ts",
+    "install:doctor": "node --import tsx scripts/install-doctor.ts",
+    "install:postcheck": "node --import tsx scripts/postinstall-check.ts",
+    "bundle:windows-pilot": "node --import tsx scripts/build-windows-pilot-bundle.ts",
+    "demo:scenarios": "node --import tsx scripts/run-demo-scenarios.ts"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.10.0",
+    "next": "14.2.35",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "@types/react": "^19.1.13",
+    "@types/react-dom": "^19.1.9",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.2"
+  }
+}

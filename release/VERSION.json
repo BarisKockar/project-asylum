@@ -1,0 +1,8 @@
+{
+  "product": "project-asylum",
+  "version": "0.1.0",
+  "channel": "prototype",
+  "installationMode": "observe-only",
+  "safeByDefault": true,
+  "remediationEnabled": false
+}
